@@ -1,0 +1,17 @@
+# Binaries and build output
+/dist/
+/bin/
+/goto-jqk
+*.exe
+
+# Test and coverage output
+*.out
+coverage.*
+
+# Local config
+.goto-jqk.yaml
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
