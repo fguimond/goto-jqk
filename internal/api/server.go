@@ -9,10 +9,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/fguimond/goto-jqk/internal/store/memory"
 
 	"github.com/fguimond/goto-jqk/internal/handler"
 	"github.com/fguimond/goto-jqk/internal/service"
-	"github.com/fguimond/goto-jqk/internal/store"
 	"github.com/fguimond/goto-jqk/internal/version"
 )
 
@@ -29,7 +29,7 @@ func NewHandler(logger *slog.Logger) http.Handler {
 	api := humago.New(mux, config)
 
 	// Compose the layers: store -> service -> handler.
-	gameStore := store.NewMemoryGameStore()
+	gameStore := memory.NewGameStore()
 	gameSvc := service.NewGameService(gameStore)
 	gameHandler := handler.NewGameHandler(gameSvc)
 

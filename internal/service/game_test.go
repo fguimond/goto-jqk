@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/fguimond/goto-jqk/internal/store"
+	"github.com/fguimond/goto-jqk/internal/store/memory"
 )
 
 func TestGameService_CreateAndDelete(t *testing.T) {
-	svc := NewGameService(store.NewMemoryGameStore())
+	svc := NewGameService(memory.NewGameStore())
 	ctx := context.Background()
 
 	g, err := svc.Create(ctx, "Chess")
