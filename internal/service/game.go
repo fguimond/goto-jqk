@@ -8,16 +8,23 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fguimond/goto-jqk/internal/model"
-	"github.com/fguimond/goto-jqk/internal/store"
 )
+
+// GameStore is the persistence behavior GameService depends on. It is declared
+// here, at the point of use, so the service owns the abstraction it consumes
+// rather than importing one defined alongside a concrete implementation.
+type GameStore interface {
+	Create(g *model.Game) error
+	Delete(id uuid.UUID) error
+}
 
 // GameService implements game-related business logic.
 type GameService struct {
-	store store.GameStore
+	store GameStore
 }
 
 // NewGameService wires a GameService to its backing store.
-func NewGameService(s store.GameStore) *GameService {
+func NewGameService(s GameStore) *GameService {
 	return &GameService{store: s}
 }
 

@@ -39,6 +39,3 @@ func (s *MemoryGameStore) Delete(id uuid.UUID) error {
 	delete(s.games, id)
 	return nil
 }
-
-// compile-time assertion that MemoryGameStore satisfies GameStore.
-var _ GameStore = (*MemoryGameStore)(nil)
