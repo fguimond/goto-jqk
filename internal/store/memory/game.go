@@ -31,6 +31,20 @@ func (s *GameStore) Create(g *model.Game) error {
 	return nil
 }
 
+// AddDeck appends a deck to the game with the given ID, returning ErrNotFound
+// if the game is absent. The lookup and the append happen under a single lock
+// so callers never mutate a stored game outside the store's synchronization.
+func (s *GameStore) AddDeck(gameID uuid.UUID, d *model.Deck) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	g.Decks = append(g.Decks, d)
+	return nil
+}
+
 // Delete removes a game by ID, returning ErrNotFound if it is absent.
 func (s *GameStore) Delete(id uuid.UUID) error {
 	s.mu.Lock()

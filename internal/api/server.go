@@ -33,8 +33,13 @@ func NewHandler(logger *slog.Logger) http.Handler {
 	gameSvc := service.NewGameService(gameStore)
 	gameHandler := handler.NewGameHandler(gameSvc)
 
+	deckStore := memory.NewDeckStore()
+	deckSvc := service.NewDeckService(deckStore, gameStore)
+	deckHandler := handler.NewDeckHandler(deckSvc)
+
 	// Register operations on the API.
 	gameHandler.Register(api)
+	deckHandler.Register(api)
 	handler.RegisterHealth(api)
 
 	return withLogging(logger, mux)
