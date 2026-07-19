@@ -8,6 +8,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/fguimond/goto-jqk/internal/model"
 	"github.com/fguimond/goto-jqk/internal/service"
 	"github.com/fguimond/goto-jqk/internal/store"
 )
@@ -29,6 +30,16 @@ type Deck struct {
 	Remaining int    `json:"remaining" doc:"Number of cards left in the deck"`
 }
 
+// newDeck builds the API representation of a domain deck. An unassigned deck
+// carries the zero UUID, which the omitempty tag drops from the response.
+func newDeck(d *model.Deck) Deck {
+	out := Deck{ID: d.ID.String(), Remaining: len(d.Cards)}
+	if d.GameID != uuid.Nil {
+		out.GameID = d.GameID.String()
+	}
+	return out
+}
+
 // CreateDeckInput is the request body for creating a deck.
 type CreateDeckInput struct {
 	Body struct {
@@ -39,6 +50,14 @@ type CreateDeckInput struct {
 // CreateDeckOutput is the response for a created deck.
 type CreateDeckOutput struct {
 	Body Deck
+}
+
+// ListDecksInput carries no parameters; listing takes no arguments.
+type ListDecksInput struct{}
+
+// ListDecksOutput is the response carrying every deck.
+type ListDecksOutput struct {
+	Body []Deck
 }
 
 // Register attaches the deck operations to the API.
@@ -52,6 +71,15 @@ func (h *DeckHandler) Register(api huma.API) {
 		Tags:          []string{"deck"},
 		DefaultStatus: http.StatusCreated,
 	}, h.Create)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-decks",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/decks",
+		Summary:       "List decks",
+		Tags:          []string{"deck"},
+		DefaultStatus: http.StatusOK,
+	}, h.List)
 }
 
 // Create handles POST /api/v1/decks.
@@ -73,9 +101,19 @@ func (h *DeckHandler) Create(ctx context.Context, in *CreateDeckInput) (*CreateD
 		return nil, huma.Error500InternalServerError("failed to create deck", err)
 	}
 
-	body := Deck{ID: d.ID.String(), Remaining: len(d.Cards)}
-	if d.GameID != uuid.Nil {
-		body.GameID = d.GameID.String()
+	return &CreateDeckOutput{Body: newDeck(d)}, nil
+}
+
+// List handles GET /api/v1/decks.
+func (h *DeckHandler) List(ctx context.Context, _ *ListDecksInput) (*ListDecksOutput, error) {
+	decks, err := h.svc.List(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to list decks", err)
 	}
-	return &CreateDeckOutput{Body: body}, nil
+	// Built empty rather than nil so an empty listing serializes as [], not null.
+	body := make([]Deck, 0, len(decks))
+	for _, d := range decks {
+		body = append(body, newDeck(d))
+	}
+	return &ListDecksOutput{Body: body}, nil
 }

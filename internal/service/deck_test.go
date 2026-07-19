@@ -101,6 +101,55 @@ func TestDeckService_AddDecks(t *testing.T) {
 	}
 }
 
+func TestDeckService_List(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	svc := NewDeckService(memory.NewDeckStore(), gameStore)
+	gameSvc := NewGameService(gameStore)
+	ctx := context.Background()
+
+	decks, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(decks) != 0 {
+		t.Fatalf("expected no decks, got %d", len(decks))
+	}
+
+	g, err := gameSvc.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create game returned error: %v", err)
+	}
+	if _, err := svc.Create(ctx, nil); err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	assigned, err := svc.Create(ctx, &g.ID)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+
+	decks, err = svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(decks) != 2 {
+		t.Fatalf("expected 2 decks, got %d", len(decks))
+	}
+
+	// The listing must carry each deck's assignment and its full card count.
+	for _, d := range decks {
+		if len(d.Cards) != 52 {
+			t.Errorf("expected 52 cards on deck %v, got %d", d.ID, len(d.Cards))
+		}
+		want := uuid.Nil
+		if d.ID == assigned.ID {
+			want = g.ID
+		}
+		if d.GameID != want {
+			t.Errorf("expected deck %v to have game id %v, got %v", d.ID, want, d.GameID)
+		}
+	}
+}
+
 // TestDeckService_AddDecksConcurrent races several games for the same deck.
 // Exactly one may win: the service checks and sets Deck.GameID under its own
 // lock precisely so this cannot interleave. Run with -race.

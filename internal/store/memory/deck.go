@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"bytes"
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -28,6 +30,25 @@ func (s *DeckStore) Create(d *model.Deck) error {
 	defer s.mu.Unlock()
 	s.decks[d.ID] = d
 	return nil
+}
+
+// List returns every stored deck, ordered by ID. Map iteration order is
+// randomized, so the sort is what keeps successive listings stable.
+//
+// Each deck is a snapshot, so callers never hold a stored deck. Copying GameID
+// is only safe under the deck service's lock, which owns that field.
+func (s *DeckStore) List() ([]*model.Deck, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	decks := make([]*model.Deck, 0, len(s.decks))
+	for _, d := range s.decks {
+		snapshot := *d
+		decks = append(decks, &snapshot)
+	}
+	slices.SortFunc(decks, func(a, b *model.Deck) int {
+		return bytes.Compare(a.ID[:], b.ID[:])
+	})
+	return decks, nil
 }
 
 // GetAll returns the decks for the given IDs, in the order requested, or

@@ -14,6 +14,7 @@ import (
 // at the point of use.
 type DeckStore interface {
 	Create(d *model.Deck) error
+	List() ([]*model.Deck, error)
 	GetAll(ids []uuid.UUID) ([]*model.Deck, error)
 }
 
@@ -64,6 +65,14 @@ func (s *DeckService) Create(_ context.Context, gameID *uuid.UUID) (*model.Deck,
 		return nil, err
 	}
 	return d, nil
+}
+
+// List returns every deck. It holds the lock because listing reads GameID off
+// every stored deck, and this service owns that field.
+func (s *DeckService) List(_ context.Context) ([]*model.Deck, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.store.List()
 }
 
 // AddDecks attaches existing decks to a game and returns the updated game. It

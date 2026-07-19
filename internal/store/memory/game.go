@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"bytes"
 	"slices"
 	"sync"
 
@@ -64,6 +65,25 @@ func (s *GameStore) AddDecks(gameID uuid.UUID, decks []*model.Deck) (*model.Game
 	snapshot := *g
 	snapshot.Decks = slices.Clone(g.Decks)
 	return &snapshot, nil
+}
+
+// List returns every stored game, ordered by ID. Map iteration order is
+// randomized, so the sort is what keeps successive listings stable.
+//
+// Each game is a snapshot, so callers never hold a stored game.
+func (s *GameStore) List() ([]*model.Game, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	games := make([]*model.Game, 0, len(s.games))
+	for _, g := range s.games {
+		snapshot := *g
+		snapshot.Decks = slices.Clone(g.Decks)
+		games = append(games, &snapshot)
+	}
+	slices.SortFunc(games, func(a, b *model.Game) int {
+		return bytes.Compare(a.ID[:], b.ID[:])
+	})
+	return games, nil
 }
 
 // Delete removes a game by ID, returning ErrNotFound if it is absent.

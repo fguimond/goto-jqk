@@ -15,6 +15,7 @@ import (
 // rather than importing one defined alongside a concrete implementation.
 type GameStore interface {
 	Create(g *model.Game) error
+	List() ([]*model.Game, error)
 	Delete(id uuid.UUID) error
 }
 
@@ -38,6 +39,11 @@ func (s *GameService) Create(_ context.Context, name string) (*model.Game, error
 		return nil, err
 	}
 	return g, nil
+}
+
+// List returns every game.
+func (s *GameService) List(_ context.Context) ([]*model.Game, error) {
+	return s.store.List()
 }
 
 // Delete removes a game by its ID.
