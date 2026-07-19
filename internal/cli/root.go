@@ -18,9 +18,9 @@ var cfgFile string
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "goto-jqk",
-		Short: "goto-jqk is a REST API server",
-		Long: "goto-jqk is a REST API server scaffolded with cobra/viper, " +
-			"a huma-generated OpenAPI schema, and structured slog logging.",
+		Short: "goto-jqk is a basic deck of cards game",
+		Long: "goto-jqk is a a REST API that represent a deck of poker-style playing cards along with the services for " +
+			"a very basic game between multiple players holding cards",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
