@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"slices"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/fguimond/goto-jqk/internal/model"
 	"github.com/fguimond/goto-jqk/internal/store"
 	"github.com/fguimond/goto-jqk/internal/store/memory"
 )
@@ -29,6 +33,55 @@ func TestGameService_CreateAndDelete(t *testing.T) {
 
 	if err := svc.Delete(ctx, g.ID); err != store.ErrNotFound {
 		t.Errorf("expected ErrNotFound on second delete, got %v", err)
+	}
+}
+
+func TestGameService_Cards(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	svc := NewGameService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	ctx := context.Background()
+
+	g, err := svc.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	// A game with no decks has an empty game deck, not an error.
+	cards, err := svc.Cards(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if len(cards) != 0 {
+		t.Fatalf("expected no cards, got %d", len(cards))
+	}
+
+	first, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	second, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{first.ID, second.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	cards, err = svc.Cards(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+
+	// The order is the order the decks were added, each in deck order, so the
+	// game deck is exactly the two decks concatenated.
+	want := append(model.NewCards(), model.NewCards()...)
+	if !slices.Equal(cards, want) {
+		t.Errorf("expected the game deck to be the two decks concatenated, got %d cards", len(cards))
+	}
+
+	if _, err := svc.Cards(ctx, uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
 	}
 }
 

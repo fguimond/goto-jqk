@@ -29,8 +29,8 @@ func NewGameHandler(svc *service.GameService, decks *service.DeckService) *GameH
 }
 
 // Game is the API representation of a game resource. The game deck is reported
-// as a count: the cards themselves are not part of the resource, since knowing
-// them would give away the order they will be dealt in.
+// as a count so that listing games stays a fixed size per game; the cards
+// themselves are served by the game's cards endpoint.
 type Game struct {
 	ID                string   `json:"id" format:"uuid" doc:"Unique identifier of the game"`
 	Name              string   `json:"name" doc:"Name of the game"`
@@ -108,6 +108,16 @@ type AddGameDecksOutput struct {
 	Body Game
 }
 
+// ListGameCardsInput is the path input for listing a game's cards.
+type ListGameCardsInput struct {
+	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+}
+
+// ListGameCardsOutput is the response carrying the game deck's cards.
+type ListGameCardsOutput struct {
+	Body []Card
+}
+
 // Register attaches the game operations to the API.
 func (h *GameHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -136,6 +146,16 @@ func (h *GameHandler) Register(api huma.API) {
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusNoContent,
 	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-game-cards",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/games/{gameId}/cards",
+		Summary:       "List a game's cards",
+		Description:   "Lists the cards in the game deck, in the order they sit in it: decks are appended in the order they were added, each contributing its cards in deck order. This is the order the cards will be dealt in.",
+		Tags:          []string{"game"},
+		DefaultStatus: http.StatusOK,
+	}, h.ListCards)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "add-game-decks",
@@ -169,6 +189,29 @@ func (h *GameHandler) List(ctx context.Context, _ *ListGamesInput) (*ListGamesOu
 		body = append(body, newGame(g))
 	}
 	return &ListGamesOutput{Body: body}, nil
+}
+
+// ListCards handles GET /api/v1/games/{gameId}/cards.
+func (h *GameHandler) ListCards(ctx context.Context, in *ListGameCardsInput) (*ListGameCardsOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+
+	cards, err := h.svc.Cards(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("game not found")
+		}
+		return nil, huma.Error500InternalServerError("failed to list cards", err)
+	}
+
+	// Built empty rather than nil so an empty game deck serializes as [], not null.
+	body := make([]Card, 0, len(cards))
+	for _, c := range cards {
+		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
+	}
+	return &ListGameCardsOutput{Body: body}, nil
 }
 
 // Delete handles DELETE /api/v1/games/{id}.

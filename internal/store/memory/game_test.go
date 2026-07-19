@@ -37,6 +37,32 @@ func TestGameStore_AddDeck(t *testing.T) {
 	}
 }
 
+func TestGameStore_Get(t *testing.T) {
+	s := NewGameStore()
+	g := &model.Game{ID: uuid.New(), Name: "Poker", GameDeck: model.NewCards()}
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	got, err := s.Get(g.ID)
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if got.ID != g.ID || len(got.GameDeck) != 52 {
+		t.Errorf("expected game %v with 52 cards, got %v with %d", g.ID, got.ID, len(got.GameDeck))
+	}
+
+	// The snapshot must be a copy: mutating it leaves the store untouched.
+	got.GameDeck = got.GameDeck[:0]
+	if len(s.games[g.ID].GameDeck) != 52 {
+		t.Errorf("expected the stored game deck to still have 52 cards, got %d", len(s.games[g.ID].GameDeck))
+	}
+
+	if _, err := s.Get(uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}
+
 func TestGameStore_List(t *testing.T) {
 	s := NewGameStore()
 	g := &model.Game{ID: uuid.New(), Name: "Poker", Decks: []*model.Deck{{ID: uuid.New()}}}
