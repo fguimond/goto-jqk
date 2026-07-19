@@ -34,6 +34,33 @@ func TestGameStore_AddDeck(t *testing.T) {
 	}
 }
 
+func TestGameStore_List(t *testing.T) {
+	s := NewGameStore()
+	g := &model.Game{ID: uuid.New(), Name: "Poker", Decks: []*model.Deck{{ID: uuid.New()}}}
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	games, err := s.List()
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("expected 1 game, got %d", len(games))
+	}
+
+	// The listing must hand back copies: mutating one leaves the store untouched.
+	games[0].Name = "Chess"
+	games[0].Decks = append(games[0].Decks, &model.Deck{ID: uuid.New()})
+	stored := s.games[g.ID]
+	if stored.Name != "Poker" {
+		t.Errorf("expected the stored game to still be named Poker, got %q", stored.Name)
+	}
+	if len(stored.Decks) != 1 {
+		t.Errorf("expected the stored game to still have 1 deck, got %d", len(stored.Decks))
+	}
+}
+
 func TestGameStore_AddDecks(t *testing.T) {
 	s := NewGameStore()
 	g := &model.Game{ID: uuid.New(), Name: "Poker"}

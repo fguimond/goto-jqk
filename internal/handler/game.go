@@ -56,6 +56,14 @@ type CreateGameOutput struct {
 	Body Game
 }
 
+// ListGamesInput carries no parameters; listing takes no arguments.
+type ListGamesInput struct{}
+
+// ListGamesOutput is the response carrying every game.
+type ListGamesOutput struct {
+	Body []Game
+}
+
 // DeleteGameInput is the path input for deleting a game.
 type DeleteGameInput struct {
 	ID string `path:"id" format:"uuid" doc:"Unique identifier of the game"`
@@ -96,6 +104,15 @@ func (h *GameHandler) Register(api huma.API) {
 	}, h.Create)
 
 	huma.Register(api, huma.Operation{
+		OperationID:   "list-games",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/games",
+		Summary:       "List games",
+		Tags:          []string{"game"},
+		DefaultStatus: http.StatusOK,
+	}, h.List)
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "delete-game",
 		Method:        http.MethodDelete,
 		Path:          "/api/v1/games/{id}",
@@ -122,6 +139,20 @@ func (h *GameHandler) Create(ctx context.Context, in *CreateGameInput) (*CreateG
 		return nil, huma.Error500InternalServerError("failed to create game", err)
 	}
 	return &CreateGameOutput{Body: newGame(g)}, nil
+}
+
+// List handles GET /api/v1/games.
+func (h *GameHandler) List(ctx context.Context, _ *ListGamesInput) (*ListGamesOutput, error) {
+	games, err := h.svc.List(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to list games", err)
+	}
+	// Built empty rather than nil so an empty listing serializes as [], not null.
+	body := make([]Game, 0, len(games))
+	for _, g := range games {
+		body = append(body, newGame(g))
+	}
+	return &ListGamesOutput{Body: body}, nil
 }
 
 // Delete handles DELETE /api/v1/games/{id}.
