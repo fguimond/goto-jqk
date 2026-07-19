@@ -46,7 +46,7 @@ func (h *DeckHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-deck",
 		Method:        http.MethodPost,
-		Path:          "/api/v1/deck",
+		Path:          "/api/v1/decks",
 		Summary:       "Create a deck",
 		Description:   "Creates a deck initialized with the 52 cards of a standard deck.",
 		Tags:          []string{"deck"},
@@ -54,7 +54,7 @@ func (h *DeckHandler) Register(api huma.API) {
 	}, h.Create)
 }
 
-// Create handles POST /api/v1/deck.
+// Create handles POST /api/v1/decks.
 func (h *DeckHandler) Create(ctx context.Context, in *CreateDeckInput) (*CreateDeckOutput, error) {
 	var gameID *uuid.UUID
 	if in.Body.GameID != "" {

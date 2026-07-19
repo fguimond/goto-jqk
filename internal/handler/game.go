@@ -89,7 +89,7 @@ func (h *GameHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "create-game",
 		Method:        http.MethodPost,
-		Path:          "/api/v1/game",
+		Path:          "/api/v1/games",
 		Summary:       "Create a game",
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusCreated,
@@ -98,7 +98,7 @@ func (h *GameHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "delete-game",
 		Method:        http.MethodDelete,
-		Path:          "/api/v1/game/{id}",
+		Path:          "/api/v1/games/{id}",
 		Summary:       "Delete a game",
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusNoContent,
@@ -107,7 +107,7 @@ func (h *GameHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "add-game-decks",
 		Method:        http.MethodPatch,
-		Path:          "/api/v1/game/{gameId}/decks",
+		Path:          "/api/v1/games/{gameId}/decks",
 		Summary:       "Add decks to a game",
 		Description:   "Applies an RFC 6902 patch document to the game's deck list. Only the \"add\" operation against the append pointer \"/-\" is supported. The patch is applied atomically: if any deck is unknown or already assigned to a game, none are added.",
 		Tags:          []string{"game"},
@@ -115,7 +115,7 @@ func (h *GameHandler) Register(api huma.API) {
 	}, h.AddDecks)
 }
 
-// Create handles POST /api/v1/game.
+// Create handles POST /api/v1/games.
 func (h *GameHandler) Create(ctx context.Context, in *CreateGameInput) (*CreateGameOutput, error) {
 	g, err := h.svc.Create(ctx, in.Body.Name)
 	if err != nil {
@@ -124,7 +124,7 @@ func (h *GameHandler) Create(ctx context.Context, in *CreateGameInput) (*CreateG
 	return &CreateGameOutput{Body: newGame(g)}, nil
 }
 
-// Delete handles DELETE /api/v1/game/{id}.
+// Delete handles DELETE /api/v1/games/{id}.
 func (h *GameHandler) Delete(ctx context.Context, in *DeleteGameInput) (*DeleteGameOutput, error) {
 	id, err := uuid.Parse(in.ID)
 	if err != nil {
@@ -139,7 +139,7 @@ func (h *GameHandler) Delete(ctx context.Context, in *DeleteGameInput) (*DeleteG
 	return &DeleteGameOutput{}, nil
 }
 
-// AddDecks handles PATCH /api/v1/game/{gameId}/decks.
+// AddDecks handles PATCH /api/v1/games/{gameId}/decks.
 func (h *GameHandler) AddDecks(ctx context.Context, in *AddGameDecksInput) (*AddGameDecksOutput, error) {
 	gameID, err := uuid.Parse(in.GameID)
 	if err != nil {

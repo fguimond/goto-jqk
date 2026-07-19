@@ -61,11 +61,18 @@ first):
 
 The API is versioned under `/api/v1`.
 
-| Method   | Path                  | Description       | Success |
-| -------- | --------------------- | ----------------- | ------- |
-| `POST`   | `/api/v1/game`        | Create a game     | `201`   |
-| `DELETE` | `/api/v1/game/{id}`   | Delete a game     | `204`   |
-| `GET`    | `/healthz`            | Liveness check    | `200`   |
+| Method   | Path                            | Description          | Success |
+| -------- | ------------------------------- | -------------------- | ------- |
+| `POST`   | `/api/v1/games`                 | Create a game        | `201`   |
+| `DELETE` | `/api/v1/games/{id}`            | Delete a game        | `204`   |
+| `PATCH`  | `/api/v1/games/{gameId}/decks`  | Add decks to a game  | `200`   |
+| `POST`   | `/api/v1/decks`                 | Create a deck        | `201`   |
+| `GET`    | `/healthz`                      | Liveness check       | `200`   |
+
+Adding decks to a game takes an [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)
+patch document. Only the `add` operation against the append pointer `/-` is supported, and
+the patch is applied atomically: if any deck is unknown or already assigned to a game, none
+are added.
 
 Additional endpoints provided automatically by huma:
 
@@ -77,15 +84,39 @@ Additional endpoints provided automatically by huma:
 
 ### Examples
 
+Every JSON response also carries a `"$schema"` field linking to the resource schema
+(e.g. `http://localhost:8080/schemas/Game.json`); it is elided below for readability.
+The calls form one sequence — later commands reuse the IDs returned by earlier ones.
+
 ```bash
 # Create a game
-curl -sS -X POST http://localhost:8080/api/v1/game \
+curl -sS -X POST http://localhost:8080/api/v1/games \
   -H 'Content-Type: application/json' \
   -d '{"name":"Chess"}'
-# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess"}
+# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess","decks":[]}
+
+# Create an unassigned deck (52 cards of a standard deck)
+curl -sS -X POST http://localhost:8080/api/v1/decks \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+# {"id":"1b4e28ba-2fa1-11d2-883f-0016d3cca427","remaining":52}
+
+# Create a deck already assigned to the game
+curl -sS -X POST http://localhost:8080/api/v1/decks \
+  -H 'Content-Type: application/json' \
+  -d '{"gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6"}'
+# {"id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","remaining":52}
+
+# Add the unassigned deck to the game (RFC 6902 patch document)
+curl -sS -X PATCH http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/decks \
+  -H 'Content-Type: application/json' \
+  -d '[{"op":"add","path":"/-","value":"1b4e28ba-2fa1-11d2-883f-0016d3cca427"}]'
+# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess",
+#  "decks":["6ba7b810-9dad-11d1-80b4-00c04fd430c8","1b4e28ba-2fa1-11d2-883f-0016d3cca427"]}
 
 # Delete a game
-curl -sS -X DELETE http://localhost:8080/api/v1/game/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6 -i
+curl -sS -X DELETE http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6 -i
+# HTTP/1.1 204 No Content
 
 # Health check
 curl -sS http://localhost:8080/healthz
