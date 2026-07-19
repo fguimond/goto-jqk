@@ -33,3 +33,37 @@ func TestGameStore_AddDeck(t *testing.T) {
 		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
 	}
 }
+
+func TestGameStore_AddDecks(t *testing.T) {
+	s := NewGameStore()
+	g := &model.Game{ID: uuid.New(), Name: "Poker"}
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	first := &model.Deck{ID: uuid.New()}
+	second := &model.Deck{ID: uuid.New()}
+	snapshot, err := s.AddDecks(g.ID, []*model.Deck{first, second})
+	if err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+	if len(snapshot.Decks) != 2 {
+		t.Fatalf("expected 2 decks on the snapshot, got %d", len(snapshot.Decks))
+	}
+
+	// The store records the association but never assigns GameID; that is the
+	// deck service's to own.
+	if first.GameID != uuid.Nil || second.GameID != uuid.Nil {
+		t.Errorf("expected the store to leave GameID alone, got %v and %v", first.GameID, second.GameID)
+	}
+
+	// The snapshot must be a copy: mutating it leaves the store untouched.
+	snapshot.Decks = append(snapshot.Decks, &model.Deck{ID: uuid.New()})
+	if len(s.games[g.ID].Decks) != 2 {
+		t.Errorf("expected the stored game to still have 2 decks, got %d", len(s.games[g.ID].Decks))
+	}
+
+	if _, err := s.AddDecks(uuid.New(), []*model.Deck{{ID: uuid.New()}}); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}

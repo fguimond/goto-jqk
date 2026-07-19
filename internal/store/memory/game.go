@@ -2,6 +2,7 @@
 package memory
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/google/uuid"
@@ -43,6 +44,26 @@ func (s *GameStore) AddDeck(gameID uuid.UUID, d *model.Deck) error {
 	}
 	g.Decks = append(g.Decks, d)
 	return nil
+}
+
+// AddDecks appends decks to the game with the given ID and returns a snapshot
+// of the updated game, or ErrNotFound if the game is absent. Callers are
+// responsible for validating that the decks may be attached; the store only
+// records the association.
+//
+// The snapshot is a copy, so callers never hold the stored game.
+func (s *GameStore) AddDecks(gameID uuid.UUID, decks []*model.Deck) (*model.Game, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	g.Decks = append(g.Decks, decks...)
+
+	snapshot := *g
+	snapshot.Decks = slices.Clone(g.Decks)
+	return &snapshot, nil
 }
 
 // Delete removes a game by ID, returning ErrNotFound if it is absent.
