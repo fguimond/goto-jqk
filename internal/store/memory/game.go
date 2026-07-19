@@ -62,9 +62,52 @@ func (s *GameStore) AddDecks(gameID uuid.UUID, decks []*model.Deck) (*model.Game
 	}
 	g.Decks = append(g.Decks, decks...)
 
+	return snapshotGame(g), nil
+}
+
+// AddPlayer appends a player to the game with the given ID and returns a
+// snapshot of the updated game, or ErrNotFound if the game is absent. The
+// lookup and the append happen under a single lock so callers never mutate a
+// stored game outside the store's synchronization.
+func (s *GameStore) AddPlayer(gameID uuid.UUID, p *model.Player) (*model.Game, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	g.Players = append(g.Players, p)
+
+	return snapshotGame(g), nil
+}
+
+// RemovePlayer drops a player from the game with the given ID, returning
+// ErrNotFound if either the game or the player is absent.
+func (s *GameStore) RemovePlayer(gameID, playerID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	i := slices.IndexFunc(g.Players, func(p *model.Player) bool {
+		return p.ID == playerID
+	})
+	if i < 0 {
+		return store.ErrNotFound
+	}
+	g.Players = slices.Delete(g.Players, i, i+1)
+	return nil
+}
+
+// snapshotGame copies a stored game and its slices, so callers never hold the
+// stored game or the backing arrays the store keeps appending to. Callers must
+// hold the lock.
+func snapshotGame(g *model.Game) *model.Game {
 	snapshot := *g
 	snapshot.Decks = slices.Clone(g.Decks)
-	return &snapshot, nil
+	snapshot.Players = slices.Clone(g.Players)
+	return &snapshot
 }
 
 // List returns every stored game, ordered by ID. Map iteration order is
@@ -76,9 +119,7 @@ func (s *GameStore) List() ([]*model.Game, error) {
 	defer s.mu.RUnlock()
 	games := make([]*model.Game, 0, len(s.games))
 	for _, g := range s.games {
-		snapshot := *g
-		snapshot.Decks = slices.Clone(g.Decks)
-		games = append(games, &snapshot)
+		games = append(games, snapshotGame(g))
 	}
 	slices.SortFunc(games, func(a, b *model.Game) int {
 		return bytes.Compare(a.ID[:], b.ID[:])
