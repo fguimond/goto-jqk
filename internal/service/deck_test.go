@@ -42,6 +42,17 @@ func TestDeckService_Create(t *testing.T) {
 	if assigned.GameID != g.ID {
 		t.Errorf("expected game id %v, got %v", g.ID, assigned.GameID)
 	}
+	// A deck created straight into a game hands its cards over on the way in.
+	if len(assigned.Cards) != 0 {
+		t.Errorf("expected the assigned deck emptied, got %d cards", len(assigned.Cards))
+	}
+	games, err := gameSvc.List(ctx)
+	if err != nil {
+		t.Fatalf("List games returned error: %v", err)
+	}
+	if len(games) != 1 || len(games[0].GameDeck) != 52 {
+		t.Errorf("expected 52 cards in the game deck, got %v", games)
+	}
 
 	unknown := uuid.New()
 	if _, err := svc.Create(ctx, &unknown); err != store.ErrNotFound {
@@ -74,6 +85,14 @@ func TestDeckService_AddDecks(t *testing.T) {
 	}
 	if len(updated.Decks) != 2 {
 		t.Fatalf("expected 2 decks on the game, got %d", len(updated.Decks))
+	}
+
+	// The cards moved: both decks are empty and the game deck holds all 104.
+	if len(updated.GameDeck) != 104 {
+		t.Errorf("expected 104 cards in the game deck, got %d", len(updated.GameDeck))
+	}
+	if len(first.Cards) != 0 || len(second.Cards) != 0 {
+		t.Errorf("expected both decks emptied, got %d and %d cards", len(first.Cards), len(second.Cards))
 	}
 
 	// An unknown deck fails the whole patch, so the spare stays unassigned.
@@ -135,17 +154,18 @@ func TestDeckService_List(t *testing.T) {
 		t.Fatalf("expected 2 decks, got %d", len(decks))
 	}
 
-	// The listing must carry each deck's assignment and its full card count.
+	// The listing must carry each deck's assignment and its card count. An
+	// assigned deck has surrendered its cards to the game deck, so it is empty.
 	for _, d := range decks {
-		if len(d.Cards) != 52 {
-			t.Errorf("expected 52 cards on deck %v, got %d", d.ID, len(d.Cards))
-		}
-		want := uuid.Nil
+		wantGame, wantCards := uuid.Nil, 52
 		if d.ID == assigned.ID {
-			want = g.ID
+			wantGame, wantCards = g.ID, 0
 		}
-		if d.GameID != want {
-			t.Errorf("expected deck %v to have game id %v, got %v", d.ID, want, d.GameID)
+		if len(d.Cards) != wantCards {
+			t.Errorf("expected %d cards on deck %v, got %d", wantCards, d.ID, len(d.Cards))
+		}
+		if d.GameID != wantGame {
+			t.Errorf("expected deck %v to have game id %v, got %v", d.ID, wantGame, d.GameID)
 		}
 	}
 }

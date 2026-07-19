@@ -78,6 +78,12 @@ patch document. Only the `add` operation against the append pointer `/-` is supp
 the patch is applied atomically: if any deck is unknown or already assigned to a game, none
 are added.
 
+Assigning a deck to a game *moves* its cards: they leave the deck and are appended to the
+game deck, so a card is only ever in one place. An assigned deck therefore reports
+`"remaining": 0`, and the game reports the running total as `gameDeckRemaining`. A game
+lists the number of cards left in its game deck, never the cards themselves — knowing them
+would give away the order they will be dealt in.
+
 Players belong to exactly one game and are only reachable through it, so they are created
 and removed on game-scoped routes. A new player holds no cards.
 
@@ -100,7 +106,8 @@ The calls form one sequence — later commands reuse the IDs returned by earlier
 curl -sS -X POST http://localhost:8080/api/v1/games \
   -H 'Content-Type: application/json' \
   -d '{"name":"Chess"}'
-# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess","decks":[],"players":[]}
+# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess","decks":[],
+#  "gameDeckRemaining":0,"players":[]}
 
 # Create an unassigned deck (52 cards of a standard deck)
 curl -sS -X POST http://localhost:8080/api/v1/decks \
@@ -108,19 +115,21 @@ curl -sS -X POST http://localhost:8080/api/v1/decks \
   -d '{}'
 # {"id":"1b4e28ba-2fa1-11d2-883f-0016d3cca427","remaining":52}
 
-# Create a deck already assigned to the game
+# Create a deck already assigned to the game. Its 52 cards move straight into
+# the game deck, so the deck itself comes back empty.
 curl -sS -X POST http://localhost:8080/api/v1/decks \
   -H 'Content-Type: application/json' \
   -d '{"gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6"}'
-# {"id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","remaining":52}
+# {"id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8","gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","remaining":0}
 
-# Add the unassigned deck to the game (RFC 6902 patch document)
+# Add the unassigned deck to the game (RFC 6902 patch document). Its cards join
+# those of the deck assigned above, for 104 in the game deck.
 curl -sS -X PATCH http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/decks \
   -H 'Content-Type: application/json' \
   -d '[{"op":"add","path":"/-","value":"1b4e28ba-2fa1-11d2-883f-0016d3cca427"}]'
 # {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess",
 #  "decks":["6ba7b810-9dad-11d1-80b4-00c04fd430c8","1b4e28ba-2fa1-11d2-883f-0016d3cca427"],
-#  "players":[]}
+#  "gameDeckRemaining":104,"players":[]}
 
 # Add a player to the game
 curl -sS -X POST http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players \
