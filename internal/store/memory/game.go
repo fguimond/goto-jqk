@@ -1,12 +1,13 @@
+// Package memory represents an in-memory store for persistent objects
 package memory
 
 import (
 	"sync"
 
-	"github.com/fguimond/goto-jqk/internal/store"
 	"github.com/google/uuid"
 
 	"github.com/fguimond/goto-jqk/internal/model"
+	"github.com/fguimond/goto-jqk/internal/store"
 )
 
 // GameStore is a concurrency-safe in-memory GameStore.
