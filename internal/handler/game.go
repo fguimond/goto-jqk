@@ -28,12 +28,15 @@ func NewGameHandler(svc *service.GameService, decks *service.DeckService) *GameH
 	return &GameHandler{svc: svc, decks: decks}
 }
 
-// Game is the API representation of a game resource.
+// Game is the API representation of a game resource. The game deck is reported
+// as a count: the cards themselves are not part of the resource, since knowing
+// them would give away the order they will be dealt in.
 type Game struct {
-	ID      string   `json:"id" format:"uuid" doc:"Unique identifier of the game"`
-	Name    string   `json:"name" doc:"Name of the game"`
-	Decks   []string `json:"decks" doc:"IDs of the decks assigned to the game"`
-	Players []string `json:"players" doc:"IDs of the players in the game"`
+	ID                string   `json:"id" format:"uuid" doc:"Unique identifier of the game"`
+	Name              string   `json:"name" doc:"Name of the game"`
+	Decks             []string `json:"decks" doc:"IDs of the decks assigned to the game"`
+	GameDeckRemaining int      `json:"gameDeckRemaining" doc:"Number of cards left in the game deck"`
+	Players           []string `json:"players" doc:"IDs of the players in the game"`
 }
 
 // newGame builds the API representation of a domain game. The ID slices are
@@ -48,7 +51,13 @@ func newGame(g *model.Game) Game {
 	for _, p := range g.Players {
 		players = append(players, p.ID.String())
 	}
-	return Game{ID: g.ID.String(), Name: g.Name, Decks: decks, Players: players}
+	return Game{
+		ID:                g.ID.String(),
+		Name:              g.Name,
+		Decks:             decks,
+		GameDeckRemaining: len(g.GameDeck),
+		Players:           players,
+	}
 }
 
 // CreateGameInput is the request body for creating a game.
@@ -133,7 +142,7 @@ func (h *GameHandler) Register(api huma.API) {
 		Method:        http.MethodPatch,
 		Path:          "/api/v1/games/{gameId}/decks",
 		Summary:       "Add decks to a game",
-		Description:   "Applies an RFC 6902 patch document to the game's deck list. Only the \"add\" operation against the append pointer \"/-\" is supported. The patch is applied atomically: if any deck is unknown or already assigned to a game, none are added.",
+		Description:   "Applies an RFC 6902 patch document to the game's deck list. Only the \"add\" operation against the append pointer \"/-\" is supported. Each added deck surrenders its cards to the game deck, leaving the deck empty. The patch is applied atomically: if any deck is unknown or already assigned to a game, none are added.",
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusOK,
 	}, h.AddDecks)

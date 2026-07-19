@@ -33,9 +33,13 @@ func (s *GameStore) Create(g *model.Game) error {
 	return nil
 }
 
-// AddDeck appends a deck to the game with the given ID, returning ErrNotFound
-// if the game is absent. The lookup and the append happen under a single lock
-// so callers never mutate a stored game outside the store's synchronization.
+// AddDeck appends a deck to the game with the given ID and its cards to the
+// game deck, returning ErrNotFound if the game is absent. The lookup and the
+// append happen under a single lock so callers never mutate a stored game
+// outside the store's synchronization.
+//
+// The deck's cards are read, not cleared: emptying the deck is the deck
+// service's, since it owns every write to a deck.
 func (s *GameStore) AddDeck(gameID uuid.UUID, d *model.Deck) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -44,15 +48,17 @@ func (s *GameStore) AddDeck(gameID uuid.UUID, d *model.Deck) error {
 		return store.ErrNotFound
 	}
 	g.Decks = append(g.Decks, d)
+	g.GameDeck = append(g.GameDeck, d.Cards...)
 	return nil
 }
 
-// AddDecks appends decks to the game with the given ID and returns a snapshot
-// of the updated game, or ErrNotFound if the game is absent. Callers are
-// responsible for validating that the decks may be attached; the store only
-// records the association.
+// AddDecks appends decks to the game with the given ID and their cards to the
+// game deck, returning a snapshot of the updated game, or ErrNotFound if the
+// game is absent. Callers are responsible for validating that the decks may be
+// attached; the store only records the association and takes the cards.
 //
-// The snapshot is a copy, so callers never hold the stored game.
+// As in AddDeck, the decks' cards are read, not cleared. The snapshot is a
+// copy, so callers never hold the stored game.
 func (s *GameStore) AddDecks(gameID uuid.UUID, decks []*model.Deck) (*model.Game, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -61,6 +67,9 @@ func (s *GameStore) AddDecks(gameID uuid.UUID, decks []*model.Deck) (*model.Game
 		return nil, store.ErrNotFound
 	}
 	g.Decks = append(g.Decks, decks...)
+	for _, d := range decks {
+		g.GameDeck = append(g.GameDeck, d.Cards...)
+	}
 
 	return snapshotGame(g), nil
 }
@@ -106,6 +115,7 @@ func (s *GameStore) RemovePlayer(gameID, playerID uuid.UUID) error {
 func snapshotGame(g *model.Game) *model.Game {
 	snapshot := *g
 	snapshot.Decks = slices.Clone(g.Decks)
+	snapshot.GameDeck = slices.Clone(g.GameDeck)
 	snapshot.Players = slices.Clone(g.Players)
 	return &snapshot
 }

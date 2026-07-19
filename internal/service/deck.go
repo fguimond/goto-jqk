@@ -27,10 +27,11 @@ type DeckAttacher interface {
 
 // DeckService implements deck-related business logic.
 type DeckService struct {
-	// mu guards every read and write of Deck.GameID. The service owns that
-	// field: a deck belongs to exactly one game, and enforcing that invariant
-	// means checking and setting it without another request slipping in
-	// between. The stores never touch it.
+	// mu guards every read and write of Deck.GameID and Deck.Cards. The service
+	// owns those fields: a deck belongs to exactly one game and surrenders its
+	// cards to that game, and enforcing those invariants means checking and
+	// setting them without another request slipping in between. The stores read
+	// the cards but never write either field.
 	mu    sync.Mutex
 	store DeckStore
 	games DeckAttacher
@@ -43,8 +44,9 @@ func NewDeckService(s DeckStore, g DeckAttacher) *DeckService {
 }
 
 // Create builds a new 52-card deck with a freshly generated UUID v4 and
-// persists it. If gameID is non-nil the deck is assigned to that game, and
-// store.ErrNotFound is returned when no such game exists.
+// persists it. If gameID is non-nil the deck is assigned to that game and its
+// cards move into that game's deck, leaving it empty; store.ErrNotFound is
+// returned when no such game exists.
 func (s *DeckService) Create(_ context.Context, gameID *uuid.UUID) (*model.Deck, error) {
 	d := &model.Deck{
 		ID:    uuid.New(), // uuid.New generates a random (version 4) UUID.
@@ -53,12 +55,16 @@ func (s *DeckService) Create(_ context.Context, gameID *uuid.UUID) (*model.Deck,
 
 	// Attach before persisting so an unknown game leaves no orphan deck behind.
 	if gameID != nil {
+		// Held across the attach so no listing catches the cards sitting in
+		// both the deck and the game deck.
 		s.mu.Lock()
-		d.GameID = *gameID
-		s.mu.Unlock()
 		if err := s.games.AddDeck(*gameID, d); err != nil {
+			s.mu.Unlock()
 			return nil, err
 		}
+		d.GameID = *gameID
+		d.Cards = nil
+		s.mu.Unlock()
 	}
 
 	if err := s.store.Create(d); err != nil {
@@ -75,8 +81,9 @@ func (s *DeckService) List(_ context.Context) ([]*model.Deck, error) {
 	return s.store.List()
 }
 
-// AddDecks attaches existing decks to a game and returns the updated game. It
-// is all-or-nothing: store.ErrNotFound is returned if the game or any deck is
+// AddDecks attaches existing decks to a game, moving their cards into the
+// game's deck and leaving them empty, and returns the updated game. It is
+// all-or-nothing: store.ErrNotFound is returned if the game or any deck is
 // unknown, and store.ErrConflict if any deck already belongs to a game or is
 // listed more than once.
 func (s *DeckService) AddDecks(_ context.Context, gameID uuid.UUID, deckIDs []uuid.UUID) (*model.Game, error) {
@@ -111,10 +118,12 @@ func (s *DeckService) AddDecks(_ context.Context, gameID uuid.UUID, deckIDs []uu
 		return nil, err
 	}
 
-	// Stamp only once the append succeeded, so an unknown game leaves no
-	// half-assigned decks behind and there is nothing to roll back.
+	// Stamp and empty only once the append succeeded, so an unknown game leaves
+	// no half-assigned decks behind and there is nothing to roll back. The
+	// cards now live in the game deck, so the decks give them up.
 	for _, d := range decks {
 		d.GameID = gameID
+		d.Cards = nil
 	}
 	return g, nil
 }
