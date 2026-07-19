@@ -61,18 +61,25 @@ first):
 
 The API is versioned under `/api/v1`.
 
-| Method   | Path                            | Description          | Success |
-| -------- | ------------------------------- | -------------------- | ------- |
-| `POST`   | `/api/v1/games`                 | Create a game        | `201`   |
-| `DELETE` | `/api/v1/games/{id}`            | Delete a game        | `204`   |
-| `PATCH`  | `/api/v1/games/{gameId}/decks`  | Add decks to a game  | `200`   |
-| `POST`   | `/api/v1/decks`                 | Create a deck        | `201`   |
-| `GET`    | `/healthz`                      | Liveness check       | `200`   |
+| Method   | Path                                         | Description               | Success |
+| -------- | -------------------------------------------- | ------------------------- | ------- |
+| `POST`   | `/api/v1/games`                              | Create a game             | `201`   |
+| `GET`    | `/api/v1/games`                              | List games                | `200`   |
+| `DELETE` | `/api/v1/games/{id}`                         | Delete a game             | `204`   |
+| `PATCH`  | `/api/v1/games/{gameId}/decks`               | Add decks to a game       | `200`   |
+| `POST`   | `/api/v1/games/{gameId}/players`             | Create a player           | `201`   |
+| `DELETE` | `/api/v1/games/{gameId}/players/{playerId}`  | Remove a player from a game | `204` |
+| `POST`   | `/api/v1/decks`                              | Create a deck             | `201`   |
+| `GET`    | `/api/v1/decks`                              | List decks                | `200`   |
+| `GET`    | `/healthz`                                   | Liveness check            | `200`   |
 
 Adding decks to a game takes an [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)
 patch document. Only the `add` operation against the append pointer `/-` is supported, and
 the patch is applied atomically: if any deck is unknown or already assigned to a game, none
 are added.
+
+Players belong to exactly one game and are only reachable through it, so they are created
+and removed on game-scoped routes. A new player holds no cards.
 
 Additional endpoints provided automatically by huma:
 
@@ -93,7 +100,7 @@ The calls form one sequence — later commands reuse the IDs returned by earlier
 curl -sS -X POST http://localhost:8080/api/v1/games \
   -H 'Content-Type: application/json' \
   -d '{"name":"Chess"}'
-# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess","decks":[]}
+# {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess","decks":[],"players":[]}
 
 # Create an unassigned deck (52 cards of a standard deck)
 curl -sS -X POST http://localhost:8080/api/v1/decks \
@@ -112,7 +119,20 @@ curl -sS -X PATCH http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a
   -H 'Content-Type: application/json' \
   -d '[{"op":"add","path":"/-","value":"1b4e28ba-2fa1-11d2-883f-0016d3cca427"}]'
 # {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess",
-#  "decks":["6ba7b810-9dad-11d1-80b4-00c04fd430c8","1b4e28ba-2fa1-11d2-883f-0016d3cca427"]}
+#  "decks":["6ba7b810-9dad-11d1-80b4-00c04fd430c8","1b4e28ba-2fa1-11d2-883f-0016d3cca427"],
+#  "players":[]}
+
+# Add a player to the game
+curl -sS -X POST http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Alice"}'
+# {"id":"7d444840-9dc0-11d1-b245-5ffdce74fad2","gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6",
+#  "name":"Alice","cards":[]}
+
+# Remove the player from the game
+curl -sS -X DELETE \
+  http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players/7d444840-9dc0-11d1-b245-5ffdce74fad2 -i
+# HTTP/1.1 204 No Content
 
 # Delete a game
 curl -sS -X DELETE http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6 -i

@@ -30,18 +30,25 @@ func NewGameHandler(svc *service.GameService, decks *service.DeckService) *GameH
 
 // Game is the API representation of a game resource.
 type Game struct {
-	ID    string   `json:"id" format:"uuid" doc:"Unique identifier of the game"`
-	Name  string   `json:"name" doc:"Name of the game"`
-	Decks []string `json:"decks" doc:"IDs of the decks assigned to the game"`
+	ID      string   `json:"id" format:"uuid" doc:"Unique identifier of the game"`
+	Name    string   `json:"name" doc:"Name of the game"`
+	Decks   []string `json:"decks" doc:"IDs of the decks assigned to the game"`
+	Players []string `json:"players" doc:"IDs of the players in the game"`
 }
 
-// newGame builds the API representation of a domain game.
+// newGame builds the API representation of a domain game. The ID slices are
+// built empty rather than nil so a game with none serializes them as [], not
+// null.
 func newGame(g *model.Game) Game {
 	decks := make([]string, 0, len(g.Decks))
 	for _, d := range g.Decks {
 		decks = append(decks, d.ID.String())
 	}
-	return Game{ID: g.ID.String(), Name: g.Name, Decks: decks}
+	players := make([]string, 0, len(g.Players))
+	for _, p := range g.Players {
+		players = append(players, p.ID.String())
+	}
+	return Game{ID: g.ID.String(), Name: g.Name, Decks: decks, Players: players}
 }
 
 // CreateGameInput is the request body for creating a game.

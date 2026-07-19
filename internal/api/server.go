@@ -36,6 +36,11 @@ func NewHandler(logger *slog.Logger) http.Handler {
 	deckSvc := service.NewDeckService(deckStore, gameStore)
 	deckHandler := handler.NewDeckHandler(deckSvc)
 
+	// Players live inside the game aggregate, so their service records them
+	// against the game store.
+	playerSvc := service.NewPlayerService(gameStore)
+	playerHandler := handler.NewPlayerHandler(playerSvc)
+
 	// The game handler also serves the deck-assignment route, so it needs the
 	// deck service alongside its own.
 	gameHandler := handler.NewGameHandler(gameSvc, deckSvc)
@@ -43,6 +48,7 @@ func NewHandler(logger *slog.Logger) http.Handler {
 	// Register operations on the API.
 	gameHandler.Register(api)
 	deckHandler.Register(api)
+	playerHandler.Register(api)
 	handler.RegisterHealth(api)
 
 	return withLogging(logger, mux)
