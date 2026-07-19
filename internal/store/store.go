@@ -10,3 +10,7 @@ import "errors"
 
 // ErrNotFound is returned when a requested entity does not exist.
 var ErrNotFound = errors.New("not found")
+
+// ErrConflict is returned when an operation would violate an existing
+// assignment, such as attaching a deck that already belongs to a game.
+var ErrConflict = errors.New("conflict")

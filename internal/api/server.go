@@ -31,10 +31,18 @@ func NewHandler(logger *slog.Logger) http.Handler {
 	// Compose the layers: store -> service -> handler.
 	gameStore := memory.NewGameStore()
 	gameSvc := service.NewGameService(gameStore)
-	gameHandler := handler.NewGameHandler(gameSvc)
+
+	deckStore := memory.NewDeckStore()
+	deckSvc := service.NewDeckService(deckStore, gameStore)
+	deckHandler := handler.NewDeckHandler(deckSvc)
+
+	// The game handler also serves the deck-assignment route, so it needs the
+	// deck service alongside its own.
+	gameHandler := handler.NewGameHandler(gameSvc, deckSvc)
 
 	// Register operations on the API.
 	gameHandler.Register(api)
+	deckHandler.Register(api)
 	handler.RegisterHealth(api)
 
 	return withLogging(logger, mux)
