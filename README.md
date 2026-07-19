@@ -67,6 +67,7 @@ The API is versioned under `/api/v1`.
 | `GET`    | `/api/v1/games`                              | List games                | `200`   |
 | `DELETE` | `/api/v1/games/{id}`                         | Delete a game             | `204`   |
 | `PATCH`  | `/api/v1/games/{gameId}/decks`               | Add decks to a game       | `200`   |
+| `GET`    | `/api/v1/games/{gameId}/cards`               | List a game's cards       | `200`   |
 | `POST`   | `/api/v1/games/{gameId}/players`             | Create a player           | `201`   |
 | `DELETE` | `/api/v1/games/{gameId}/players/{playerId}`  | Remove a player from a game | `204` |
 | `POST`   | `/api/v1/decks`                              | Create a deck             | `201`   |
@@ -80,9 +81,12 @@ are added.
 
 Assigning a deck to a game *moves* its cards: they leave the deck and are appended to the
 game deck, so a card is only ever in one place. An assigned deck therefore reports
-`"remaining": 0`, and the game reports the running total as `gameDeckRemaining`. A game
-lists the number of cards left in its game deck, never the cards themselves — knowing them
-would give away the order they will be dealt in.
+`"remaining": 0`, and the game reports the running total as `gameDeckRemaining`.
+
+The game resource carries that count rather than the cards, so listing games stays a fixed
+size per game. The cards themselves are served by `GET /api/v1/games/{gameId}/cards`, which
+returns them in the order they sit in the game deck: decks in the order they were added,
+each contributing its cards in deck order. That is the order they will be dealt in.
 
 Players belong to exactly one game and are only reachable through it, so they are created
 and removed on game-scoped routes. A new player holds no cards.
@@ -130,6 +134,10 @@ curl -sS -X PATCH http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a
 # {"id":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6","name":"Chess",
 #  "decks":["6ba7b810-9dad-11d1-80b4-00c04fd430c8","1b4e28ba-2fa1-11d2-883f-0016d3cca427"],
 #  "gameDeckRemaining":104,"players":[]}
+
+# List the game's cards, in the order they will be dealt
+curl -sS http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/cards
+# [{"suit":"heart","value":"ace"},{"suit":"heart","value":"2"}, … 104 cards]
 
 # Add a player to the game
 curl -sS -X POST http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players \

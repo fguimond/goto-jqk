@@ -120,6 +120,18 @@ func snapshotGame(g *model.Game) *model.Game {
 	return &snapshot
 }
 
+// Get returns a snapshot of the game with the given ID, or ErrNotFound if it is
+// absent. The snapshot is a copy, so callers never hold the stored game.
+func (s *GameStore) Get(id uuid.UUID) (*model.Game, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	g, ok := s.games[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return snapshotGame(g), nil
+}
+
 // List returns every stored game, ordered by ID. Map iteration order is
 // randomized, so the sort is what keeps successive listings stable.
 //
