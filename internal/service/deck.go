@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/google/uuid"
@@ -32,26 +33,37 @@ type DeckService struct {
 	// cards to that game, and enforcing those invariants means checking and
 	// setting them without another request slipping in between. The stores read
 	// the cards but never write either field.
-	mu    sync.Mutex
-	store DeckStore
-	games DeckAttacher
+	mu     sync.Mutex
+	store  DeckStore
+	games  DeckAttacher
+	logger *slog.Logger
 }
 
 // NewDeckService wires a DeckService to its backing store and to the game store
-// it assigns decks through.
-func NewDeckService(s DeckStore, g DeckAttacher) *DeckService {
-	return &DeckService{store: s, games: g}
+// it assigns decks through. A nil logger falls back to slog.Default().
+func NewDeckService(s DeckStore, g DeckAttacher, logger *slog.Logger) *DeckService {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &DeckService{
+		store:  s,
+		games:  g,
+		logger: logger.With(slog.String("component", "deck_service")),
+	}
 }
 
 // Create builds a new 52-card deck with a freshly generated UUID v4 and
 // persists it. If gameID is non-nil the deck is assigned to that game and its
 // cards move into that game's deck, leaving it empty; store.ErrNotFound is
 // returned when no such game exists.
-func (s *DeckService) Create(_ context.Context, gameID *uuid.UUID) (*model.Deck, error) {
+func (s *DeckService) Create(ctx context.Context, gameID *uuid.UUID) (*model.Deck, error) {
 	d := &model.Deck{
 		ID:    uuid.New(), // uuid.New generates a random (version 4) UUID.
 		Cards: model.NewCards(),
 	}
+	// Captured up front: attaching to a game empties d.Cards.
+	cards := len(d.Cards)
+	log := opLogger(s.logger, entityDeck, opCreate)
 
 	// Attach before persisting so an unknown game leaves no orphan deck behind.
 	if gameID != nil {
@@ -60,6 +72,11 @@ func (s *DeckService) Create(_ context.Context, gameID *uuid.UUID) (*model.Deck,
 		s.mu.Lock()
 		if err := s.games.AddDeck(*gameID, d); err != nil {
 			s.mu.Unlock()
+			log.ErrorContext(ctx, "attach new deck to game failed",
+				slog.String("deck_id", d.ID.String()),
+				slog.String("game_id", gameID.String()),
+				slog.Any("error", err),
+			)
 			return nil, err
 		}
 		d.GameID = *gameID
@@ -68,8 +85,22 @@ func (s *DeckService) Create(_ context.Context, gameID *uuid.UUID) (*model.Deck,
 	}
 
 	if err := s.store.Create(d); err != nil {
+		log.ErrorContext(ctx, "create deck failed",
+			slog.String("deck_id", d.ID.String()),
+			slog.Any("error", err),
+		)
 		return nil, err
 	}
+
+	attrs := []slog.Attr{
+		slog.String("deck_id", d.ID.String()),
+		slog.Int("cards", cards),
+		slog.Bool("attached", gameID != nil),
+	}
+	if gameID != nil {
+		attrs = append(attrs, slog.String("game_id", gameID.String()))
+	}
+	log.LogAttrs(ctx, slog.LevelInfo, "deck created", attrs...)
 	return d, nil
 }
 
@@ -86,12 +117,24 @@ func (s *DeckService) List(_ context.Context) ([]*model.Deck, error) {
 // all-or-nothing: store.ErrNotFound is returned if the game or any deck is
 // unknown, and store.ErrConflict if any deck already belongs to a game or is
 // listed more than once.
-func (s *DeckService) AddDecks(_ context.Context, gameID uuid.UUID, deckIDs []uuid.UUID) (*model.Game, error) {
+func (s *DeckService) AddDecks(ctx context.Context, gameID uuid.UUID, deckIDs []uuid.UUID) (*model.Game, error) {
+	// Both sides change, but the game is the resource the request targets and
+	// the one a reader is filtering for, so it is the entity here; the decks
+	// involved are named in deck_ids.
+	log := opLogger(s.logger, entityGame, opUpdate).With(
+		slog.String("game_id", gameID.String()),
+		slog.Any("deck_ids", deckIDStrings(deckIDs)),
+		slog.Int("deck_count", len(deckIDs)),
+	)
+
 	// A deck listed twice cannot be attached twice, so reject it up front
 	// rather than letting the second attach fail against the first.
 	seen := make(map[uuid.UUID]struct{}, len(deckIDs))
 	for _, id := range deckIDs {
 		if _, dup := seen[id]; dup {
+			log.WarnContext(ctx, "add decks to game rejected: deck listed twice",
+				slog.String("deck_id", id.String()),
+			)
 			return nil, store.ErrConflict
 		}
 		seen[id] = struct{}{}
@@ -102,6 +145,7 @@ func (s *DeckService) AddDecks(_ context.Context, gameID uuid.UUID, deckIDs []uu
 
 	decks, err := s.store.GetAll(deckIDs)
 	if err != nil {
+		log.ErrorContext(ctx, "add decks to game failed: unknown deck", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -109,12 +153,23 @@ func (s *DeckService) AddDecks(_ context.Context, gameID uuid.UUID, deckIDs []uu
 	// so a rejected patch attaches nothing.
 	for _, d := range decks {
 		if d.GameID != uuid.Nil {
+			log.WarnContext(ctx, "add decks to game rejected: deck already assigned",
+				slog.String("deck_id", d.ID.String()),
+				slog.String("owning_game_id", d.GameID.String()),
+			)
 			return nil, store.ErrConflict
 		}
 	}
 
+	// Counted before the decks give their cards up below.
+	moved := 0
+	for _, d := range decks {
+		moved += len(d.Cards)
+	}
+
 	g, err := s.games.AddDecks(gameID, decks)
 	if err != nil {
+		log.ErrorContext(ctx, "add decks to game failed", slog.Any("error", err))
 		return nil, err
 	}
 
@@ -125,5 +180,21 @@ func (s *DeckService) AddDecks(_ context.Context, gameID uuid.UUID, deckIDs []uu
 		d.GameID = gameID
 		d.Cards = nil
 	}
+
+	log.InfoContext(ctx, "decks added to game",
+		slog.String("game_name", g.Name),
+		slog.Int("cards_moved", moved),
+		slog.Int("game_deck_size", len(g.GameDeck)),
+	)
 	return g, nil
+}
+
+// deckIDStrings renders deck IDs for logging: slog would otherwise emit
+// uuid.UUID as a byte array.
+func deckIDStrings(ids []uuid.UUID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	return out
 }

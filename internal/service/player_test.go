@@ -14,9 +14,9 @@ import (
 
 func TestPlayerService_Deal(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	games := NewGameService(gameStore)
-	svc := NewPlayerService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	games := NewGameService(gameStore, testLogger())
+	svc := NewPlayerService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := games.Create(ctx, "Poker")
@@ -93,9 +93,9 @@ func TestPlayerService_Deal(t *testing.T) {
 
 func TestPlayerService_Cards(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	games := NewGameService(gameStore)
-	svc := NewPlayerService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	games := NewGameService(gameStore, testLogger())
+	svc := NewPlayerService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := games.Create(ctx, "Poker")
@@ -157,9 +157,9 @@ func TestPlayerService_Cards(t *testing.T) {
 
 func TestPlayerService_Leaders(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	games := NewGameService(gameStore)
-	svc := NewPlayerService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	games := NewGameService(gameStore, testLogger())
+	svc := NewPlayerService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := games.Create(ctx, "Poker")
@@ -239,9 +239,9 @@ func TestPlayerService_Leaders(t *testing.T) {
 // calls rank a settled game the same way.
 func TestPlayerService_LeadersTiesHoldJoinOrder(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	games := NewGameService(gameStore)
-	svc := NewPlayerService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	games := NewGameService(gameStore, testLogger())
+	svc := NewPlayerService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := games.Create(ctx, "Poker")
@@ -292,8 +292,8 @@ func TestPlayerService_LeadersTiesHoldJoinOrder(t *testing.T) {
 
 func TestPlayerService_CreateAndDelete(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	games := NewGameService(gameStore)
-	svc := NewPlayerService(gameStore)
+	games := NewGameService(gameStore, testLogger())
+	svc := NewPlayerService(gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := games.Create(ctx, "Chess")
@@ -344,7 +344,7 @@ func TestPlayerService_CreateAndDelete(t *testing.T) {
 }
 
 func TestPlayerService_CreateUnknownGame(t *testing.T) {
-	svc := NewPlayerService(memory.NewGameStore())
+	svc := NewPlayerService(memory.NewGameStore(), testLogger())
 
 	if _, err := svc.Create(context.Background(), uuid.New(), "Alice"); err != store.ErrNotFound {
 		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
@@ -352,7 +352,7 @@ func TestPlayerService_CreateUnknownGame(t *testing.T) {
 }
 
 func TestPlayerService_DeleteUnknownGame(t *testing.T) {
-	svc := NewPlayerService(memory.NewGameStore())
+	svc := NewPlayerService(memory.NewGameStore(), testLogger())
 
 	if err := svc.Delete(context.Background(), uuid.New(), uuid.New()); err != store.ErrNotFound {
 		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
@@ -363,8 +363,8 @@ func TestPlayerService_DeleteUnknownGame(t *testing.T) {
 // them via another game must not touch them.
 func TestPlayerService_DeleteFromWrongGame(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	games := NewGameService(gameStore)
-	svc := NewPlayerService(gameStore)
+	games := NewGameService(gameStore, testLogger())
+	svc := NewPlayerService(gameStore, testLogger())
 	ctx := context.Background()
 
 	first, err := games.Create(ctx, "Chess")

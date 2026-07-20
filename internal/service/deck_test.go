@@ -13,8 +13,8 @@ import (
 
 func TestDeckService_Create(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewDeckService(memory.NewDeckStore(), gameStore)
-	gameSvc := NewGameService(gameStore)
+	svc := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
+	gameSvc := NewGameService(gameStore, testLogger())
 	ctx := context.Background()
 
 	d, err := svc.Create(ctx, nil)
@@ -62,8 +62,8 @@ func TestDeckService_Create(t *testing.T) {
 
 func TestDeckService_AddDecks(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewDeckService(memory.NewDeckStore(), gameStore)
-	gameSvc := NewGameService(gameStore)
+	svc := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
+	gameSvc := NewGameService(gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := gameSvc.Create(ctx, "Poker")
@@ -122,8 +122,8 @@ func TestDeckService_AddDecks(t *testing.T) {
 
 func TestDeckService_List(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewDeckService(memory.NewDeckStore(), gameStore)
-	gameSvc := NewGameService(gameStore)
+	svc := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
+	gameSvc := NewGameService(gameStore, testLogger())
 	ctx := context.Background()
 
 	decks, err := svc.List(ctx)
@@ -175,8 +175,8 @@ func TestDeckService_List(t *testing.T) {
 // lock precisely so this cannot interleave. Run with -race.
 func TestDeckService_AddDecksConcurrent(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewDeckService(memory.NewDeckStore(), gameStore)
-	gameSvc := NewGameService(gameStore)
+	svc := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
+	gameSvc := NewGameService(gameStore, testLogger())
 	ctx := context.Background()
 
 	d, err := svc.Create(ctx, nil)

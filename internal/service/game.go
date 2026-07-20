@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"math/rand/v2"
 	"slices"
 
@@ -31,11 +32,20 @@ type GameStore interface {
 type GameService struct {
 	store   GameStore
 	shuffle func([]model.Card)
+	logger  *slog.Logger
 }
 
-// NewGameService wires a GameService to its backing store.
-func NewGameService(s GameStore) *GameService {
-	return &GameService{store: s, shuffle: shuffleCards}
+// NewGameService wires a GameService to its backing store. A nil logger falls
+// back to slog.Default().
+func NewGameService(s GameStore, logger *slog.Logger) *GameService {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &GameService{
+		store:   s,
+		shuffle: shuffleCards,
+		logger:  logger.With(slog.String("component", "game_service")),
+	}
 }
 
 // shuffleCards permutes cards in place. The math/rand/v2 global source is
@@ -48,14 +58,24 @@ func shuffleCards(cards []model.Card) {
 }
 
 // Create builds a new game with a freshly generated UUID v4 and persists it.
-func (s *GameService) Create(_ context.Context, name string) (*model.Game, error) {
+func (s *GameService) Create(ctx context.Context, name string) (*model.Game, error) {
 	g := &model.Game{
 		ID:   uuid.New(), // uuid.New generates a random (version 4) UUID.
 		Name: name,
 	}
+	log := opLogger(s.logger, entityGame, opCreate)
 	if err := s.store.Create(g); err != nil {
+		log.ErrorContext(ctx, "create game failed",
+			slog.String("game_id", g.ID.String()),
+			slog.String("game_name", name),
+			slog.Any("error", err),
+		)
 		return nil, err
 	}
+	log.InfoContext(ctx, "game created",
+		slog.String("game_id", g.ID.String()),
+		slog.String("game_name", g.Name),
+	)
 	return g, nil
 }
 
@@ -156,11 +176,34 @@ func (s *GameService) CardCounts(ctx context.Context, id uuid.UUID) ([]CardCount
 
 // Shuffle randomizes the order of the game's deck and returns the updated game.
 // store.ErrNotFound is returned when no such game exists.
-func (s *GameService) Shuffle(_ context.Context, id uuid.UUID) (*model.Game, error) {
-	return s.store.Shuffle(id, s.shuffle)
+func (s *GameService) Shuffle(ctx context.Context, id uuid.UUID) (*model.Game, error) {
+	log := opLogger(s.logger, entityGame, opUpdate)
+	g, err := s.store.Shuffle(id, s.shuffle)
+	if err != nil {
+		log.ErrorContext(ctx, "shuffle game deck failed",
+			slog.String("game_id", id.String()),
+			slog.Any("error", err),
+		)
+		return nil, err
+	}
+	log.InfoContext(ctx, "game deck shuffled",
+		slog.String("game_id", g.ID.String()),
+		slog.String("game_name", g.Name),
+		slog.Int("cards", len(g.GameDeck)),
+	)
+	return g, nil
 }
 
 // Delete removes a game by its ID.
-func (s *GameService) Delete(_ context.Context, id uuid.UUID) error {
-	return s.store.Delete(id)
+func (s *GameService) Delete(ctx context.Context, id uuid.UUID) error {
+	log := opLogger(s.logger, entityGame, opDelete)
+	if err := s.store.Delete(id); err != nil {
+		log.ErrorContext(ctx, "delete game failed",
+			slog.String("game_id", id.String()),
+			slog.Any("error", err),
+		)
+		return err
+	}
+	log.InfoContext(ctx, "game deleted", slog.String("game_id", id.String()))
+	return nil
 }
