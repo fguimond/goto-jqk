@@ -85,6 +85,64 @@ func TestGameService_Cards(t *testing.T) {
 	}
 }
 
+func TestGameService_Shuffle(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	svc := NewGameService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	ctx := context.Background()
+
+	// Substitute a deterministic permutation for the random one, so the test can
+	// assert the exact resulting order.
+	svc.shuffle = func(cards []model.Card) {
+		slices.Reverse(cards)
+	}
+
+	g, err := svc.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	// A game with an empty game deck shuffles successfully, it is not an error.
+	if _, err := svc.Shuffle(ctx, g.ID); err != nil {
+		t.Fatalf("Shuffle returned error: %v", err)
+	}
+
+	d, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{d.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	shuffled, err := svc.Shuffle(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Shuffle returned error: %v", err)
+	}
+	if len(shuffled.GameDeck) != 52 {
+		t.Errorf("expected 52 cards after the shuffle, got %d", len(shuffled.GameDeck))
+	}
+
+	want := model.NewCards()
+	slices.Reverse(want)
+	if !slices.Equal(shuffled.GameDeck, want) {
+		t.Errorf("expected the game deck reversed, got a different order")
+	}
+
+	// The shuffle must persist: reading the cards back returns the new order.
+	cards, err := svc.Cards(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if !slices.Equal(cards, want) {
+		t.Errorf("expected the shuffled order to persist in the store")
+	}
+
+	if _, err := svc.Shuffle(ctx, uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}
+
 func TestGameService_List(t *testing.T) {
 	svc := NewGameService(memory.NewGameStore())
 	ctx := context.Background()

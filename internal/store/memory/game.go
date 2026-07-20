@@ -74,6 +74,26 @@ func (s *GameStore) AddDecks(gameID uuid.UUID, decks []*model.Deck) (*model.Game
 	return snapshotGame(g), nil
 }
 
+// Shuffle permutes the game deck of the game with the given ID, returning a
+// snapshot of the updated game, or ErrNotFound if the game is absent. The
+// lookup and the permutation happen under a single lock so callers never mutate
+// a stored game outside the store's synchronization.
+//
+// The permutation itself is supplied by the caller, keeping the choice of
+// randomness out of the store. A game with an empty game deck is a no-op, not
+// an error. The snapshot is a copy, so callers never hold the stored game.
+func (s *GameStore) Shuffle(id uuid.UUID, shuffle func([]model.Card)) (*model.Game, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.games[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	shuffle(g.GameDeck)
+
+	return snapshotGame(g), nil
+}
+
 // AddPlayer appends a player to the game with the given ID and returns a
 // snapshot of the updated game, or ErrNotFound if the game is absent. The
 // lookup and the append happen under a single lock so callers never mutate a
