@@ -16,6 +16,7 @@ type PlayerStore interface {
 	AddPlayer(gameID uuid.UUID, p *model.Player) (*model.Game, error)
 	RemovePlayer(gameID, playerID uuid.UUID) error
 	DealCards(gameID, playerID uuid.UUID, count int) ([]model.Card, error)
+	PlayerCards(gameID, playerID uuid.UUID) ([]model.Card, error)
 }
 
 // PlayerService implements player-related business logic.
@@ -53,6 +54,14 @@ func (s *PlayerService) Create(_ context.Context, gameID uuid.UUID, name string)
 // and the player's hand, so the two sides never disagree.
 func (s *PlayerService) Deal(_ context.Context, gameID, playerID uuid.UUID, count int) ([]model.Card, error) {
 	return s.games.DealCards(gameID, playerID, count)
+}
+
+// Cards returns the player's whole hand, in the order the cards were dealt,
+// rather than the cards any one deal produced. A player who has been dealt
+// nothing holds an empty hand, which is not an error. store.ErrNotFound is
+// returned if either the game or the player is unknown.
+func (s *PlayerService) Cards(_ context.Context, gameID, playerID uuid.UUID) ([]model.Card, error) {
+	return s.games.PlayerCards(gameID, playerID)
 }
 
 // Delete removes a player from a game, returning store.ErrNotFound if either

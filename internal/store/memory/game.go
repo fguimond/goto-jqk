@@ -167,6 +167,30 @@ func (s *GameStore) DealCards(gameID, playerID uuid.UUID, count int) ([]model.Ca
 	return dealt, nil
 }
 
+// PlayerCards returns the hand of the player with the given ID, in the order
+// the cards were dealt. ErrNotFound is returned if either the game or the
+// player is absent. A player holding no cards is an empty hand, not an error.
+//
+// The hand is cloned rather than returned as the stored slice: DealCards
+// appends to it under the lock, so handing out the backing array would let a
+// caller observe a hand mid-deal. snapshotGame cannot serve this read, since it
+// clones Players as a slice of pointers and so shares the players themselves.
+func (s *GameStore) PlayerCards(gameID, playerID uuid.UUID) ([]model.Card, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	i := slices.IndexFunc(g.Players, func(p *model.Player) bool {
+		return p.ID == playerID
+	})
+	if i < 0 {
+		return nil, store.ErrNotFound
+	}
+	return slices.Clone(g.Players[i].Cards), nil
+}
+
 // snapshotGame copies a stored game and its slices, so callers never hold the
 // stored game or the backing arrays the store keeps appending to. Callers must
 // hold the lock.

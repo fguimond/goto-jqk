@@ -175,6 +175,55 @@ func TestGameStore_DealCards(t *testing.T) {
 	}
 }
 
+func TestGameStore_PlayerCards(t *testing.T) {
+	s := NewGameStore()
+	want := model.NewCards()
+	p := &model.Player{ID: uuid.New(), Name: "Alice", Cards: slices.Clone(want[:5])}
+	empty := &model.Player{ID: uuid.New(), Name: "Bob"}
+	g := &model.Game{
+		ID:      uuid.New(),
+		Name:    "Poker",
+		Players: []*model.Player{p, empty},
+	}
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	got, err := s.PlayerCards(g.ID, p.ID)
+	if err != nil {
+		t.Fatalf("PlayerCards returned error: %v", err)
+	}
+	if !slices.Equal(got, want[:5]) {
+		t.Errorf("expected the player's 5 cards, got a different set")
+	}
+
+	// A player who has been dealt nothing holds an empty hand, not an error.
+	hand, err := s.PlayerCards(g.ID, empty.ID)
+	if err != nil {
+		t.Fatalf("PlayerCards returned error for an empty hand: %v", err)
+	}
+	if len(hand) != 0 {
+		t.Errorf("expected an empty hand, got %d cards", len(hand))
+	}
+
+	// The hand must be a copy: mutating it leaves the store untouched. Unlike the
+	// dealt cards in DealCards, this one rests on the clone alone — the returned
+	// slice is the stored hand's array otherwise.
+	for i := range got {
+		got[i] = model.Card{}
+	}
+	if !slices.Equal(s.games[g.ID].Players[0].Cards, want[:5]) {
+		t.Errorf("expected the stored hand to survive mutation of the returned cards")
+	}
+
+	if _, err := s.PlayerCards(uuid.New(), p.ID); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+	if _, err := s.PlayerCards(g.ID, uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown player, got %v", err)
+	}
+}
+
 func TestGameStore_List(t *testing.T) {
 	s := NewGameStore()
 	g := &model.Game{ID: uuid.New(), Name: "Poker", Decks: []*model.Deck{{ID: uuid.New()}}}
