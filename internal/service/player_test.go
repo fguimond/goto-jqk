@@ -91,6 +91,70 @@ func TestPlayerService_Deal(t *testing.T) {
 	}
 }
 
+func TestPlayerService_Cards(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	games := NewGameService(gameStore)
+	svc := NewPlayerService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	ctx := context.Background()
+
+	g, err := games.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create game returned error: %v", err)
+	}
+	p, err := svc.Create(ctx, g.ID, "Alice")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+	d, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{d.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	// A player who has been dealt nothing holds an empty hand, not an error.
+	hand, err := svc.Cards(ctx, g.ID, p.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if len(hand) != 0 {
+		t.Errorf("expected a new player to hold no cards, got %d", len(hand))
+	}
+
+	want := model.NewCards()
+	if _, err := svc.Deal(ctx, g.ID, p.ID, 5); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+	hand, err = svc.Cards(ctx, g.ID, p.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if !slices.Equal(hand, want[:5]) {
+		t.Errorf("expected the 5 dealt cards, got a different set")
+	}
+
+	// The hand accumulates across deals rather than reporting the last one.
+	if _, err := svc.Deal(ctx, g.ID, p.ID, 3); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+	hand, err = svc.Cards(ctx, g.ID, p.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if !slices.Equal(hand, want[:8]) {
+		t.Errorf("expected all 8 dealt cards in deal order, got a different set")
+	}
+
+	if _, err := svc.Cards(ctx, uuid.New(), p.ID); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+	if _, err := svc.Cards(ctx, g.ID, uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown player, got %v", err)
+	}
+}
+
 func TestPlayerService_CreateAndDelete(t *testing.T) {
 	gameStore := memory.NewGameStore()
 	games := NewGameService(gameStore)

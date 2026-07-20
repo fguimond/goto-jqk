@@ -68,8 +68,11 @@ The API is versioned under `/api/v1`.
 | `DELETE` | `/api/v1/games/{id}`                         | Delete a game             | `204`   |
 | `PATCH`  | `/api/v1/games/{gameId}/decks`               | Add decks to a game       | `200`   |
 | `GET`    | `/api/v1/games/{gameId}/cards`               | List a game's cards       | `200`   |
+| `POST`   | `/api/v1/games/{gameId}/cards/shuffle`       | Shuffle a game's cards    | `200`   |
 | `POST`   | `/api/v1/games/{gameId}/players`             | Create a player           | `201`   |
 | `DELETE` | `/api/v1/games/{gameId}/players/{playerId}`  | Remove a player from a game | `204` |
+| `POST`   | `/api/v1/games/{gameId}/players/{playerId}/cards` | Deal cards to a player | `201` |
+| `GET`    | `/api/v1/games/{gameId}/players/{playerId}/cards` | List a player's cards  | `200` |
 | `POST`   | `/api/v1/decks`                              | Create a deck             | `201`   |
 | `GET`    | `/api/v1/decks`                              | List decks                | `200`   |
 | `GET`    | `/healthz`                                   | Liveness check            | `200`   |
@@ -90,6 +93,11 @@ each contributing its cards in deck order. That is the order they will be dealt 
 
 Players belong to exactly one game and are only reachable through it, so they are created
 and removed on game-scoped routes. A new player holds no cards.
+
+Dealing moves cards off the top of the game deck into a player's hand, and is all-or-nothing:
+if the game deck holds fewer cards than requested, none are dealt. The deal response carries
+only the cards that deal produced; `GET /api/v1/games/{gameId}/players/{playerId}/cards`
+returns the whole hand, accumulated across every deal, in the order the cards were dealt.
 
 Additional endpoints provided automatically by huma:
 
@@ -145,6 +153,18 @@ curl -sS -X POST http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0
   -d '{"name":"Alice"}'
 # {"id":"7d444840-9dc0-11d1-b245-5ffdce74fad2","gameId":"f81d4fae-7dec-4d0e-a765-00a0c91e6bf6",
 #  "name":"Alice","cards":[]}
+
+# Deal 2 cards to the player, off the top of the game deck
+curl -sS -X POST \
+  http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players/7d444840-9dc0-11d1-b245-5ffdce74fad2/cards \
+  -H 'Content-Type: application/json' \
+  -d '{"count":2}'
+# [{"suit":"heart","value":"ace"},{"suit":"heart","value":"2"}]
+
+# List the player's hand, in the order the cards were dealt
+curl -sS \
+  http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players/7d444840-9dc0-11d1-b245-5ffdce74fad2/cards
+# [{"suit":"heart","value":"ace"},{"suit":"heart","value":"2"}]
 
 # Remove the player from the game
 curl -sS -X DELETE \

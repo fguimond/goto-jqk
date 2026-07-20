@@ -93,6 +93,18 @@ type DealCardsOutput struct {
 	Body []Card
 }
 
+// ListPlayerCardsInput is the path input for listing a player's cards.
+type ListPlayerCardsInput struct {
+	GameID   string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+	PlayerID string `path:"playerId" format:"uuid" doc:"Unique identifier of the player"`
+}
+
+// ListPlayerCardsOutput is the response carrying the player's whole hand, as
+// against DealCardsOutput, which carries only the cards one deal produced.
+type ListPlayerCardsOutput struct {
+	Body []Card
+}
+
 // Register attaches the player operations to the API.
 func (h *PlayerHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -123,6 +135,16 @@ func (h *PlayerHandler) Register(api huma.API) {
 		Tags:          []string{"player"},
 		DefaultStatus: http.StatusCreated,
 	}, h.Deal)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-player-cards",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/games/{gameId}/players/{playerId}/cards",
+		Summary:       "List a player's cards",
+		Description:   "Lists the cards in the player's hand, in the order they were dealt. This is the whole hand, accumulated across every deal, rather than the cards a single deal produced. A player who has been dealt nothing holds an empty list.",
+		Tags:          []string{"player"},
+		DefaultStatus: http.StatusOK,
+	}, h.ListCards)
 }
 
 // Create handles POST /api/v1/games/{gameId}/players.
@@ -171,6 +193,33 @@ func (h *PlayerHandler) Deal(ctx context.Context, in *DealCardsInput) (*DealCard
 		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
 	}
 	return &DealCardsOutput{Body: body}, nil
+}
+
+// ListCards handles GET /api/v1/games/{gameId}/players/{playerId}/cards.
+func (h *PlayerHandler) ListCards(ctx context.Context, in *ListPlayerCardsInput) (*ListPlayerCardsOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+	playerID, err := uuid.Parse(in.PlayerID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid player id", err)
+	}
+
+	cards, err := h.svc.Cards(ctx, gameID, playerID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("game or player not found")
+		}
+		return nil, huma.Error500InternalServerError("failed to list cards", err)
+	}
+
+	// Built empty rather than nil so an empty hand serializes as [], not null.
+	body := make([]Card, 0, len(cards))
+	for _, c := range cards {
+		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
+	}
+	return &ListPlayerCardsOutput{Body: body}, nil
 }
 
 // Delete handles DELETE /api/v1/games/{gameId}/players/{playerId}.
