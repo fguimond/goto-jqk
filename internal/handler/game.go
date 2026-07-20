@@ -137,6 +137,27 @@ type ListGameCardSuitsOutput struct {
 	Body []SuitCount
 }
 
+// CardCount is the API representation of how many copies of one card are left
+// undealt in a game deck. The suits and values are enumerated here so they land
+// in the OpenAPI schema; the domain Suit and Value are plain string types that
+// do not carry them.
+type CardCount struct {
+	Suit      string `json:"suit" enum:"club,diamond,heart,spade" doc:"Suit of the card" example:"club"`
+	Value     string `json:"value" enum:"ace,2,3,4,5,6,7,8,9,10,jack,queen,king" doc:"Face value of the card" example:"king"`
+	Remaining int    `json:"remaining" doc:"Number of undealt copies of this card left in the game deck" example:"2"`
+}
+
+// ListGameCardCountsInput is the path input for counting a game's remaining
+// cards.
+type ListGameCardCountsInput struct {
+	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+}
+
+// ListGameCardCountsOutput is the response carrying the per-card counts.
+type ListGameCardCountsOutput struct {
+	Body []CardCount
+}
+
 // ShuffleGameCardsInput is the path input for shuffling a game's deck.
 type ShuffleGameCardsInput struct {
 	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
@@ -196,6 +217,16 @@ func (h *GameHandler) Register(api huma.API) {
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusOK,
 	}, h.ListCardSuits)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-game-card-counts",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/games/{gameId}/cards/counts",
+		Summary:       "Count a game's remaining cards",
+		Description:   "Counts how many copies of each card are left in the game deck. Only undealt cards are counted: a card dealt to a player has left the game deck and no longer appears. All fifty-two cards are always listed, ordered by suit alphabetically and then by face value from the king down to the ace, so a card that has been dealt out reports 0 rather than being left out, and a game whose deck is empty reports every card at 0. A game holding several decks can leave more than one copy of a card, so the counts are not capped at one. The order the cards sit in the deck is not revealed; read it from the game's cards endpoint.",
+		Tags:          []string{"game"},
+		DefaultStatus: http.StatusOK,
+	}, h.ListCardCounts)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "shuffle-game-cards",
@@ -284,6 +315,32 @@ func (h *GameHandler) ListCardSuits(ctx context.Context, in *ListGameCardSuitsIn
 		body = append(body, SuitCount{Suit: string(c.Suit), Remaining: c.Remaining})
 	}
 	return &ListGameCardSuitsOutput{Body: body}, nil
+}
+
+// ListCardCounts handles GET /api/v1/games/{gameId}/cards/counts.
+func (h *GameHandler) ListCardCounts(ctx context.Context, in *ListGameCardCountsInput) (*ListGameCardCountsOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+
+	counts, err := h.svc.CardCounts(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("game not found")
+		}
+		return nil, huma.Error500InternalServerError("failed to count remaining cards", err)
+	}
+
+	body := make([]CardCount, 0, len(counts))
+	for _, c := range counts {
+		body = append(body, CardCount{
+			Suit:      string(c.Suit),
+			Value:     string(c.Value),
+			Remaining: c.Remaining,
+		})
+	}
+	return &ListGameCardCountsOutput{Body: body}, nil
 }
 
 // Shuffle handles POST /api/v1/games/{gameId}/cards/shuffle.

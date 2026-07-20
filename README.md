@@ -69,6 +69,7 @@ The API is versioned under `/api/v1`.
 | `PATCH`  | `/api/v1/games/{gameId}/decks`                    | Add decks to a game          | `200`   |
 | `GET`    | `/api/v1/games/{gameId}/cards`                    | List a game's cards          | `200`   |
 | `GET`    | `/api/v1/games/{gameId}/cards/suits`              | Count a game's cards by suit | `200`   |
+| `GET`    | `/api/v1/games/{gameId}/cards/counts`             | Count a game's cards         | `200`   |
 | `POST`   | `/api/v1/games/{gameId}/cards/shuffle`            | Shuffle a game's cards       | `200`   |
 | `POST`   | `/api/v1/games/{gameId}/players`                  | Create a player              | `201`   |
 | `DELETE` | `/api/v1/games/{gameId}/players/{playerId}`       | Remove a player from a game  | `204`   |
@@ -99,6 +100,13 @@ to a player has left the game deck and no longer appears. All four suits are alw
 in deck order, so a suit that has been dealt out entirely reports `0` rather than being left
 out. A game holding several decks can leave more than thirteen of a suit, so the counts are
 not capped at thirteen.
+
+`GET /api/v1/games/{gameId}/cards/counts` is the finer-grained view: it counts how many
+copies of each individual card are left, again without revealing the order. All fifty-two
+cards are always listed, ordered by suit alphabetically (club, diamond, heart, spade) and
+then by face value from the king down to the ace, so a card that has been dealt out reports
+`0`. Note this is not the deck order the suits endpoint reports in. A game holding several
+decks can leave more than one copy of a card, so the counts are not capped at one.
 
 Players belong to exactly one game and are only reachable through it, so they are created
 and removed on game-scoped routes. A new player holds no cards.
