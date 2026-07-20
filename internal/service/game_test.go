@@ -85,6 +85,123 @@ func TestGameService_Cards(t *testing.T) {
 	}
 }
 
+func TestGameService_SuitCounts(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	svc := NewGameService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	players := NewPlayerService(gameStore)
+	ctx := context.Background()
+
+	g, err := svc.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	// A game with no decks reports every suit, at 0, rather than an empty list.
+	counts, err := svc.SuitCounts(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("SuitCounts returned error: %v", err)
+	}
+	if len(counts) != 4 {
+		t.Fatalf("expected 4 suits, got %d", len(counts))
+	}
+	for _, c := range counts {
+		if c.Remaining != 0 {
+			t.Errorf("expected 0 %s, got %d", c.Suit, c.Remaining)
+		}
+	}
+
+	first, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{first.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	counts, err = svc.SuitCounts(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("SuitCounts returned error: %v", err)
+	}
+	// The suits come back in deck order, each with a full thirteen.
+	if !slices.Equal(counts, []SuitCount{
+		{Suit: model.Hearts, Remaining: 13},
+		{Suit: model.Spades, Remaining: 13},
+		{Suit: model.Clubs, Remaining: 13},
+		{Suit: model.Diamonds, Remaining: 13},
+	}) {
+		t.Errorf("expected thirteen of each suit in deck order, got %v", counts)
+	}
+
+	// The unshuffled deck is suit-major, hearts first, so dealing five takes five
+	// hearts and leaves the other three suits untouched.
+	p, err := players.Create(ctx, g.ID, "Ada")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+	if _, err := players.Deal(ctx, g.ID, p.ID, 5); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+
+	counts, err = svc.SuitCounts(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("SuitCounts returned error: %v", err)
+	}
+	if !slices.Equal(counts, []SuitCount{
+		{Suit: model.Hearts, Remaining: 8},
+		{Suit: model.Spades, Remaining: 13},
+		{Suit: model.Clubs, Remaining: 13},
+		{Suit: model.Diamonds, Remaining: 13},
+	}) {
+		t.Errorf("expected the five dealt cards to come off the hearts, got %v", counts)
+	}
+
+	// A second deck lifts the counts past thirteen: they are not capped per suit.
+	second, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{second.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	counts, err = svc.SuitCounts(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("SuitCounts returned error: %v", err)
+	}
+	if !slices.Equal(counts, []SuitCount{
+		{Suit: model.Hearts, Remaining: 21},
+		{Suit: model.Spades, Remaining: 26},
+		{Suit: model.Clubs, Remaining: 26},
+		{Suit: model.Diamonds, Remaining: 26},
+	}) {
+		t.Errorf("expected the second deck to lift the counts past thirteen, got %v", counts)
+	}
+
+	// Dealing the deck out entirely still reports all four suits, at 0.
+	remaining := 21 + 26*3
+	if _, err := players.Deal(ctx, g.ID, p.ID, remaining); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+
+	counts, err = svc.SuitCounts(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("SuitCounts returned error: %v", err)
+	}
+	if len(counts) != 4 {
+		t.Fatalf("expected 4 suits once the deck is empty, got %d", len(counts))
+	}
+	for _, c := range counts {
+		if c.Remaining != 0 {
+			t.Errorf("expected 0 %s once the deck is empty, got %d", c.Suit, c.Remaining)
+		}
+	}
+
+	if _, err := svc.SuitCounts(ctx, uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}
+
 func TestGameService_Shuffle(t *testing.T) {
 	gameStore := memory.NewGameStore()
 	svc := NewGameService(gameStore)
