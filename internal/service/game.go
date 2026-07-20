@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"math/rand/v2"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -102,6 +103,53 @@ func (s *GameService) SuitCounts(ctx context.Context, id uuid.UUID) ([]SuitCount
 	counts := make([]SuitCount, 0, len(model.AllSuits))
 	for _, suit := range model.AllSuits {
 		counts = append(counts, SuitCount{Suit: suit, Remaining: tally[suit]})
+	}
+	return counts, nil
+}
+
+// CardCount is the number of undealt copies of one card left in a game deck.
+type CardCount struct {
+	Suit      model.Suit
+	Value     model.Value
+	Remaining int
+}
+
+// CardCounts reports how many copies of each card are left undealt in the game's
+// deck. All fifty-two cards are listed, ordered by suit alphabetically and then
+// by face value from the king down to the ace, including a card with nothing
+// left, which reports 0. Cards already dealt to players are not counted, and a
+// game holding several decks can leave more than one copy of a card, so the
+// counts are not capped. store.ErrNotFound is returned when no such game exists.
+func (s *GameService) CardCounts(ctx context.Context, id uuid.UUID) ([]CardCount, error) {
+	cards, err := s.Cards(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Card is comparable, so the tally keys on the whole card rather than nesting
+	// a map per suit.
+	tally := make(map[model.Card]int, len(model.AllSuits)*len(model.AllValues))
+	for _, c := range cards {
+		tally[c]++
+	}
+
+	// A sorted copy: AllSuits is in deck order, which NewCards and SuitCounts rely
+	// on, so it must not be sorted in place.
+	suits := slices.Sorted(slices.Values(model.AllSuits))
+
+	// Ranged over the suits and values rather than the tally so the order is fixed
+	// and a card that has run out still reports, at 0. AllValues runs ace to king,
+	// which is ascending face value, so it is walked backwards to descend.
+	counts := make([]CardCount, 0, len(suits)*len(model.AllValues))
+	for _, suit := range suits {
+		for i := len(model.AllValues) - 1; i >= 0; i-- {
+			value := model.AllValues[i]
+			counts = append(counts, CardCount{
+				Suit:      suit,
+				Value:     value,
+				Remaining: tally[model.Card{Suit: suit, Value: value}],
+			})
+		}
 	}
 	return counts, nil
 }
