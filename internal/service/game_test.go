@@ -13,7 +13,7 @@ import (
 )
 
 func TestGameService_CreateAndDelete(t *testing.T) {
-	svc := NewGameService(memory.NewGameStore())
+	svc := NewGameService(memory.NewGameStore(), testLogger())
 	ctx := context.Background()
 
 	g, err := svc.Create(ctx, "Chess")
@@ -38,8 +38,8 @@ func TestGameService_CreateAndDelete(t *testing.T) {
 
 func TestGameService_Cards(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewGameService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	svc := NewGameService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := svc.Create(ctx, "Poker")
@@ -87,9 +87,9 @@ func TestGameService_Cards(t *testing.T) {
 
 func TestGameService_SuitCounts(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewGameService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
-	players := NewPlayerService(gameStore)
+	svc := NewGameService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
+	players := NewPlayerService(gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := svc.Create(ctx, "Poker")
@@ -204,9 +204,9 @@ func TestGameService_SuitCounts(t *testing.T) {
 
 func TestGameService_CardCounts(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewGameService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
-	players := NewPlayerService(gameStore)
+	svc := NewGameService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
+	players := NewPlayerService(gameStore, testLogger())
 	ctx := context.Background()
 
 	g, err := svc.Create(ctx, "Poker")
@@ -346,8 +346,8 @@ func TestGameService_CardCounts(t *testing.T) {
 
 func TestGameService_Shuffle(t *testing.T) {
 	gameStore := memory.NewGameStore()
-	svc := NewGameService(gameStore)
-	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	svc := NewGameService(gameStore, testLogger())
+	decks := NewDeckService(memory.NewDeckStore(), gameStore, testLogger())
 	ctx := context.Background()
 
 	// Substitute a deterministic permutation for the random one, so the test can
@@ -403,7 +403,7 @@ func TestGameService_Shuffle(t *testing.T) {
 }
 
 func TestGameService_List(t *testing.T) {
-	svc := NewGameService(memory.NewGameStore())
+	svc := NewGameService(memory.NewGameStore(), testLogger())
 	ctx := context.Background()
 
 	games, err := svc.List(ctx)

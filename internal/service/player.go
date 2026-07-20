@@ -3,6 +3,7 @@ package service
 import (
 	"cmp"
 	"context"
+	"log/slog"
 	"slices"
 
 	"github.com/google/uuid"
@@ -31,27 +32,48 @@ type Leader struct {
 
 // PlayerService implements player-related business logic.
 type PlayerService struct {
-	games PlayerStore
+	games  PlayerStore
+	logger *slog.Logger
 }
 
 // NewPlayerService wires a PlayerService to the game store it records players
-// against.
-func NewPlayerService(g PlayerStore) *PlayerService {
-	return &PlayerService{games: g}
+// against. A nil logger falls back to slog.Default().
+func NewPlayerService(g PlayerStore, logger *slog.Logger) *PlayerService {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &PlayerService{
+		games:  g,
+		logger: logger.With(slog.String("component", "player_service")),
+	}
 }
 
 // Create builds a new player with a freshly generated UUID v4 and adds them to
 // the given game, returning store.ErrNotFound when no such game exists. A new
 // player starts with no cards.
-func (s *PlayerService) Create(_ context.Context, gameID uuid.UUID, name string) (*model.Player, error) {
+func (s *PlayerService) Create(ctx context.Context, gameID uuid.UUID, name string) (*model.Player, error) {
 	p := &model.Player{
 		ID:     uuid.New(), // uuid.New generates a random (version 4) UUID.
 		GameID: gameID,
 		Name:   name,
 	}
-	if _, err := s.games.AddPlayer(gameID, p); err != nil {
+	log := opLogger(s.logger, entityPlayer, opCreate)
+	g, err := s.games.AddPlayer(gameID, p)
+	if err != nil {
+		log.ErrorContext(ctx, "create player failed",
+			slog.String("game_id", gameID.String()),
+			slog.String("player_id", p.ID.String()),
+			slog.String("player_name", name),
+			slog.Any("error", err),
+		)
 		return nil, err
 	}
+	log.InfoContext(ctx, "player created",
+		slog.String("game_id", gameID.String()),
+		slog.String("player_id", p.ID.String()),
+		slog.String("player_name", p.Name),
+		slog.Int("players_in_game", len(g.Players)),
+	)
 	return p, nil
 }
 
@@ -62,8 +84,25 @@ func (s *PlayerService) Create(_ context.Context, gameID uuid.UUID, name string)
 //
 // The move happens entirely inside the store, which holds both the game deck
 // and the player's hand, so the two sides never disagree.
-func (s *PlayerService) Deal(_ context.Context, gameID, playerID uuid.UUID, count int) ([]model.Card, error) {
-	return s.games.DealCards(gameID, playerID, count)
+func (s *PlayerService) Deal(ctx context.Context, gameID, playerID uuid.UUID, count int) ([]model.Card, error) {
+	log := opLogger(s.logger, entityPlayer, opUpdate)
+	cards, err := s.games.DealCards(gameID, playerID, count)
+	if err != nil {
+		log.ErrorContext(ctx, "deal cards failed",
+			slog.String("game_id", gameID.String()),
+			slog.String("player_id", playerID.String()),
+			slog.Int("requested", count),
+			slog.Any("error", err),
+		)
+		return nil, err
+	}
+	log.InfoContext(ctx, "cards dealt",
+		slog.String("game_id", gameID.String()),
+		slog.String("player_id", playerID.String()),
+		slog.Int("requested", count),
+		slog.Int("dealt", len(cards)),
+	)
+	return cards, nil
 }
 
 // Cards returns the player's whole hand, in the order the cards were dealt,
@@ -106,6 +145,19 @@ func (s *PlayerService) Leaders(_ context.Context, gameID uuid.UUID) ([]Leader, 
 
 // Delete removes a player from a game, returning store.ErrNotFound if either
 // the game or the player is unknown.
-func (s *PlayerService) Delete(_ context.Context, gameID, playerID uuid.UUID) error {
-	return s.games.RemovePlayer(gameID, playerID)
+func (s *PlayerService) Delete(ctx context.Context, gameID, playerID uuid.UUID) error {
+	log := opLogger(s.logger, entityPlayer, opDelete)
+	if err := s.games.RemovePlayer(gameID, playerID); err != nil {
+		log.ErrorContext(ctx, "delete player failed",
+			slog.String("game_id", gameID.String()),
+			slog.String("player_id", playerID.String()),
+			slog.Any("error", err),
+		)
+		return err
+	}
+	log.InfoContext(ctx, "player deleted",
+		slog.String("game_id", gameID.String()),
+		slog.String("player_id", playerID.String()),
+	)
+	return nil
 }

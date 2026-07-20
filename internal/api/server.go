@@ -30,15 +30,15 @@ func NewHandler(logger *slog.Logger) http.Handler {
 
 	// Compose the layers: store -> service -> handler.
 	gameStore := memory.NewGameStore()
-	gameSvc := service.NewGameService(gameStore)
+	gameSvc := service.NewGameService(gameStore, logger)
 
 	deckStore := memory.NewDeckStore()
-	deckSvc := service.NewDeckService(deckStore, gameStore)
+	deckSvc := service.NewDeckService(deckStore, gameStore, logger)
 	deckHandler := handler.NewDeckHandler(deckSvc)
 
 	// Players live inside the game aggregate, so their service records them
 	// against the game store.
-	playerSvc := service.NewPlayerService(gameStore)
+	playerSvc := service.NewPlayerService(gameStore, logger)
 	playerHandler := handler.NewPlayerHandler(playerSvc)
 
 	// The game handler also serves the deck-assignment route, so it needs the
