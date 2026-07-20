@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -59,6 +60,51 @@ func TestGameStore_Get(t *testing.T) {
 	}
 
 	if _, err := s.Get(uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}
+
+func TestGameStore_Shuffle(t *testing.T) {
+	s := NewGameStore()
+	g := &model.Game{ID: uuid.New(), Name: "Poker", GameDeck: model.NewCards()}
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	// A deterministic permutation, so the test asserts the store applied exactly
+	// what it was handed rather than merely that something changed.
+	got, err := s.Shuffle(g.ID, func(cards []model.Card) {
+		slices.Reverse(cards)
+	})
+	if err != nil {
+		t.Fatalf("Shuffle returned error: %v", err)
+	}
+
+	want := model.NewCards()
+	slices.Reverse(want)
+	if !slices.Equal(s.games[g.ID].GameDeck, want) {
+		t.Errorf("expected the stored game deck reversed, got a different order")
+	}
+	if !slices.Equal(got.GameDeck, want) {
+		t.Errorf("expected the returned game deck reversed, got a different order")
+	}
+
+	// The snapshot must be a copy: mutating it leaves the store untouched.
+	got.GameDeck = got.GameDeck[:0]
+	if len(s.games[g.ID].GameDeck) != 52 {
+		t.Errorf("expected the stored game deck to still have 52 cards, got %d", len(s.games[g.ID].GameDeck))
+	}
+
+	// An empty game deck is a no-op, not an error.
+	empty := &model.Game{ID: uuid.New(), Name: "Chess"}
+	if err := s.Create(empty); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := s.Shuffle(empty.ID, func(cards []model.Card) { slices.Reverse(cards) }); err != nil {
+		t.Errorf("expected shuffling an empty game deck to succeed, got %v", err)
+	}
+
+	if _, err := s.Shuffle(uuid.New(), func([]model.Card) {}); err != store.ErrNotFound {
 		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
 	}
 }

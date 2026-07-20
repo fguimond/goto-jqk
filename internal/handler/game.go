@@ -118,6 +118,17 @@ type ListGameCardsOutput struct {
 	Body []Card
 }
 
+// ShuffleGameCardsInput is the path input for shuffling a game's deck.
+type ShuffleGameCardsInput struct {
+	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+}
+
+// ShuffleGameCardsOutput is the response carrying the updated game. The shuffled
+// cards are deliberately not returned, so shuffling does not reveal the order.
+type ShuffleGameCardsOutput struct {
+	Body Game
+}
+
 // Register attaches the game operations to the API.
 func (h *GameHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -152,10 +163,20 @@ func (h *GameHandler) Register(api huma.API) {
 		Method:        http.MethodGet,
 		Path:          "/api/v1/games/{gameId}/cards",
 		Summary:       "List a game's cards",
-		Description:   "Lists the cards in the game deck, in the order they sit in it: decks are appended in the order they were added, each contributing its cards in deck order. This is the order the cards will be dealt in.",
+		Description:   "Lists the cards in the game deck, in the order they sit in it, which is the order they will be dealt in. Decks are appended in the order they were added, each contributing its cards in deck order; shuffling the game deck replaces that order with a random one.",
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusOK,
 	}, h.ListCards)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "shuffle-game-cards",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/games/{gameId}/cards/shuffle",
+		Summary:       "Shuffle a game's cards",
+		Description:   "Randomizes the order of the cards in the game deck, which is the order they will be dealt in. Shuffling is not idempotent: each call reorders the deck again. A game whose deck is empty shuffles successfully and is left unchanged. The shuffled cards are not returned; read them back from the game's cards endpoint.",
+		Tags:          []string{"game"},
+		DefaultStatus: http.StatusOK,
+	}, h.Shuffle)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "add-game-decks",
@@ -212,6 +233,24 @@ func (h *GameHandler) ListCards(ctx context.Context, in *ListGameCardsInput) (*L
 		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
 	}
 	return &ListGameCardsOutput{Body: body}, nil
+}
+
+// Shuffle handles POST /api/v1/games/{gameId}/cards/shuffle.
+func (h *GameHandler) Shuffle(ctx context.Context, in *ShuffleGameCardsInput) (*ShuffleGameCardsOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+
+	g, err := h.svc.Shuffle(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("game not found")
+		}
+		return nil, huma.Error500InternalServerError("failed to shuffle cards", err)
+	}
+
+	return &ShuffleGameCardsOutput{Body: newGame(g)}, nil
 }
 
 // Delete handles DELETE /api/v1/games/{id}.
