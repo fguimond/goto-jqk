@@ -105,6 +105,25 @@ type ListPlayerCardsOutput struct {
 	Body []Card
 }
 
+// Leader is the API representation of a player's standing in a game. The hand
+// behind the total is deliberately left out: it is served by the player's cards
+// endpoint, which keeps a standing a fixed size per player.
+type Leader struct {
+	PlayerID string `json:"playerId" format:"uuid" doc:"Unique identifier of the player"`
+	Name     string `json:"name" doc:"Name of the player"`
+	Total    int    `json:"total" doc:"Total face value of the cards the player holds" example:"34"`
+}
+
+// ListLeadersInput is the path input for ranking a game's players.
+type ListLeadersInput struct {
+	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+}
+
+// ListLeadersOutput is the response carrying the ranked players.
+type ListLeadersOutput struct {
+	Body []Leader
+}
+
 // Register attaches the player operations to the API.
 func (h *PlayerHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -145,6 +164,16 @@ func (h *PlayerHandler) Register(api huma.API) {
 		Tags:          []string{"player"},
 		DefaultStatus: http.StatusOK,
 	}, h.ListCards)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-leaders",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/games/{gameId}/leaders",
+		Summary:       "Rank a game's players",
+		Description:   "Lists the players in the game with the total value of the cards each one holds, highest total first. Cards count at face value only: the ace is 1, the numeric cards score their number, the jack 11, the queen 12 and the king 13. Suit does not affect the total. Every player is listed, including one who has been dealt nothing, who places last with a total of 0. Players on equal totals keep the order they joined the game in.",
+		Tags:          []string{"player"},
+		DefaultStatus: http.StatusOK,
+	}, h.ListLeaders)
 }
 
 // Create handles POST /api/v1/games/{gameId}/players.
@@ -220,6 +249,33 @@ func (h *PlayerHandler) ListCards(ctx context.Context, in *ListPlayerCardsInput)
 		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
 	}
 	return &ListPlayerCardsOutput{Body: body}, nil
+}
+
+// ListLeaders handles GET /api/v1/games/{gameId}/leaders.
+func (h *PlayerHandler) ListLeaders(ctx context.Context, in *ListLeadersInput) (*ListLeadersOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+
+	leaders, err := h.svc.Leaders(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("game not found")
+		}
+		return nil, huma.Error500InternalServerError("failed to rank players", err)
+	}
+
+	// Built empty rather than nil so a game with no players serializes as [], not null.
+	body := make([]Leader, 0, len(leaders))
+	for _, l := range leaders {
+		body = append(body, Leader{
+			PlayerID: l.Player.ID.String(),
+			Name:     l.Player.Name,
+			Total:    l.Total,
+		})
+	}
+	return &ListLeadersOutput{Body: body}, nil
 }
 
 // Delete handles DELETE /api/v1/games/{gameId}/players/{playerId}.

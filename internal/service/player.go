@@ -1,7 +1,9 @@
 package service
 
 import (
+	"cmp"
 	"context"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -17,6 +19,14 @@ type PlayerStore interface {
 	RemovePlayer(gameID, playerID uuid.UUID) error
 	DealCards(gameID, playerID uuid.UUID, count int) ([]model.Card, error)
 	PlayerCards(gameID, playerID uuid.UUID) ([]model.Card, error)
+	Players(gameID uuid.UUID) ([]*model.Player, error)
+}
+
+// Leader is a player's standing in a game: the player together with the total
+// face value of the cards they hold.
+type Leader struct {
+	Player *model.Player
+	Total  int
 }
 
 // PlayerService implements player-related business logic.
@@ -62,6 +72,36 @@ func (s *PlayerService) Deal(_ context.Context, gameID, playerID uuid.UUID, coun
 // returned if either the game or the player is unknown.
 func (s *PlayerService) Cards(_ context.Context, gameID, playerID uuid.UUID) ([]model.Card, error) {
 	return s.games.PlayerCards(gameID, playerID)
+}
+
+// Leaders returns the game's players ranked by the total face value of the
+// cards they hold, highest total first. Cards score at face value only, so the
+// suit never matters. store.ErrNotFound is returned if the game is unknown.
+//
+// Every player is ranked, including one who has been dealt nothing: they place
+// last with a total of 0 rather than being left out. A game with no players
+// ranks empty, which is not an error.
+//
+// The sort is stable, so players on equal totals keep the order they joined in
+// and successive calls rank a settled game the same way.
+func (s *PlayerService) Leaders(_ context.Context, gameID uuid.UUID) ([]Leader, error) {
+	players, err := s.games.Players(gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	leaders := make([]Leader, 0, len(players))
+	for _, p := range players {
+		total := 0
+		for _, c := range p.Cards {
+			total += c.Points()
+		}
+		leaders = append(leaders, Leader{Player: p, Total: total})
+	}
+	slices.SortStableFunc(leaders, func(a, b Leader) int {
+		return cmp.Compare(b.Total, a.Total)
+	})
+	return leaders, nil
 }
 
 // Delete removes a player from a game, returning store.ErrNotFound if either
