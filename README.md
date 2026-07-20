@@ -61,21 +61,23 @@ first):
 
 The API is versioned under `/api/v1`.
 
-| Method   | Path                                         | Description               | Success |
-| -------- | -------------------------------------------- | ------------------------- | ------- |
-| `POST`   | `/api/v1/games`                              | Create a game             | `201`   |
-| `GET`    | `/api/v1/games`                              | List games                | `200`   |
-| `DELETE` | `/api/v1/games/{id}`                         | Delete a game             | `204`   |
-| `PATCH`  | `/api/v1/games/{gameId}/decks`               | Add decks to a game       | `200`   |
-| `GET`    | `/api/v1/games/{gameId}/cards`               | List a game's cards       | `200`   |
-| `POST`   | `/api/v1/games/{gameId}/cards/shuffle`       | Shuffle a game's cards    | `200`   |
-| `POST`   | `/api/v1/games/{gameId}/players`             | Create a player           | `201`   |
-| `DELETE` | `/api/v1/games/{gameId}/players/{playerId}`  | Remove a player from a game | `204` |
-| `POST`   | `/api/v1/games/{gameId}/players/{playerId}/cards` | Deal cards to a player | `201` |
-| `GET`    | `/api/v1/games/{gameId}/players/{playerId}/cards` | List a player's cards  | `200` |
-| `POST`   | `/api/v1/decks`                              | Create a deck             | `201`   |
-| `GET`    | `/api/v1/decks`                              | List decks                | `200`   |
-| `GET`    | `/healthz`                                   | Liveness check            | `200`   |
+| Method   | Path                                              | Description                  | Success |
+| -------- | ------------------------------------------------- | ---------------------------- | ------- |
+| `POST`   | `/api/v1/games`                                   | Create a game                | `201`   |
+| `GET`    | `/api/v1/games`                                   | List games                   | `200`   |
+| `DELETE` | `/api/v1/games/{id}`                              | Delete a game                | `204`   |
+| `PATCH`  | `/api/v1/games/{gameId}/decks`                    | Add decks to a game          | `200`   |
+| `GET`    | `/api/v1/games/{gameId}/cards`                    | List a game's cards          | `200`   |
+| `GET`    | `/api/v1/games/{gameId}/cards/suits`              | Count a game's cards by suit | `200`   |
+| `POST`   | `/api/v1/games/{gameId}/cards/shuffle`            | Shuffle a game's cards       | `200`   |
+| `POST`   | `/api/v1/games/{gameId}/players`                  | Create a player              | `201`   |
+| `DELETE` | `/api/v1/games/{gameId}/players/{playerId}`       | Remove a player from a game  | `204`   |
+| `POST`   | `/api/v1/games/{gameId}/players/{playerId}/cards` | Deal cards to a player       | `201`   |
+| `GET`    | `/api/v1/games/{gameId}/players/{playerId}/cards` | List a player's cards        | `200`   |
+| `GET`    | `/api/v1/games/{gameId}/leaders`                  | Rank a game's players        | `200`   |
+| `POST`   | `/api/v1/decks`                                   | Create a deck                | `201`   |
+| `GET`    | `/api/v1/decks`                                   | List decks                   | `200`   |
+| `GET`    | `/healthz`                                        | Liveness check               | `200`   |
 
 Adding decks to a game takes an [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)
 patch document. Only the `add` operation against the append pointer `/-` is supported, and
@@ -91,6 +93,13 @@ size per game. The cards themselves are served by `GET /api/v1/games/{gameId}/ca
 returns them in the order they sit in the game deck: decks in the order they were added,
 each contributing its cards in deck order. That is the order they will be dealt in.
 
+`GET /api/v1/games/{gameId}/cards/suits` counts what is left in the game deck by suit,
+without revealing the order the cards sit in. Only undealt cards are counted: a card dealt
+to a player has left the game deck and no longer appears. All four suits are always listed,
+in deck order, so a suit that has been dealt out entirely reports `0` rather than being left
+out. A game holding several decks can leave more than thirteen of a suit, so the counts are
+not capped at thirteen.
+
 Players belong to exactly one game and are only reachable through it, so they are created
 and removed on game-scoped routes. A new player holds no cards.
 
@@ -98,6 +107,12 @@ Dealing moves cards off the top of the game deck into a player's hand, and is al
 if the game deck holds fewer cards than requested, none are dealt. The deal response carries
 only the cards that deal produced; `GET /api/v1/games/{gameId}/players/{playerId}/cards`
 returns the whole hand, accumulated across every deal, in the order the cards were dealt.
+
+`GET /api/v1/games/{gameId}/leaders` ranks the game's players by the total face value of the
+cards they hold, highest first. Cards count at face value only: the ace is 1, the numeric
+cards score their number, the jack 11, the queen 12 and the king 13. Suit does not affect the
+total. Every player is listed, including one who has been dealt nothing, who places last with
+a total of `0`. Players on equal totals keep the order they joined the game in.
 
 Additional endpoints provided automatically by huma:
 
@@ -165,6 +180,16 @@ curl -sS -X POST \
 curl -sS \
   http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/players/7d444840-9dc0-11d1-b245-5ffdce74fad2/cards
 # [{"suit":"heart","value":"ace"},{"suit":"heart","value":"2"}]
+
+# Count what is left in the game deck by suit. Two decks give 26 of each suit;
+# the two hearts dealt above have left the game deck, so the hearts read 24.
+curl -sS http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/cards/suits
+# [{"suit":"heart","remaining":24},{"suit":"spade","remaining":26},
+#  {"suit":"club","remaining":26},{"suit":"diamond","remaining":26}]
+
+# Rank the players by the face value of the cards they hold (ace 1 + 2 = 3)
+curl -sS http://localhost:8080/api/v1/games/f81d4fae-7dec-4d0e-a765-00a0c91e6bf6/leaders
+# [{"playerId":"7d444840-9dc0-11d1-b245-5ffdce74fad2","name":"Alice","total":3}]
 
 # Remove the player from the game
 curl -sS -X DELETE \
