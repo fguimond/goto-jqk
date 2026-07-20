@@ -118,6 +118,25 @@ type ListGameCardsOutput struct {
 	Body []Card
 }
 
+// SuitCount is the API representation of how many cards of one suit are left
+// undealt in a game deck. The suits are enumerated here so they land in the
+// OpenAPI schema; the domain Suit is a plain string type that does not carry
+// them.
+type SuitCount struct {
+	Suit      string `json:"suit" enum:"heart,spade,club,diamond" doc:"Suit of the cards" example:"heart"`
+	Remaining int    `json:"remaining" doc:"Number of undealt cards of this suit left in the game deck" example:"13"`
+}
+
+// ListGameCardSuitsInput is the path input for counting a game's cards by suit.
+type ListGameCardSuitsInput struct {
+	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+}
+
+// ListGameCardSuitsOutput is the response carrying the per-suit counts.
+type ListGameCardSuitsOutput struct {
+	Body []SuitCount
+}
+
 // ShuffleGameCardsInput is the path input for shuffling a game's deck.
 type ShuffleGameCardsInput struct {
 	GameID string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
@@ -167,6 +186,16 @@ func (h *GameHandler) Register(api huma.API) {
 		Tags:          []string{"game"},
 		DefaultStatus: http.StatusOK,
 	}, h.ListCards)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "list-game-card-suits",
+		Method:        http.MethodGet,
+		Path:          "/api/v1/games/{gameId}/cards/suits",
+		Summary:       "Count a game's cards by suit",
+		Description:   "Counts the cards left in the game deck by suit. Only undealt cards are counted: a card dealt to a player has left the game deck and no longer appears. All four suits are always listed, in deck order, so a suit that has been dealt out entirely reports 0 rather than being left out, and a game whose deck is empty reports every suit at 0. A game holding several decks can leave more than thirteen of a suit, so the counts are not capped at thirteen. The order the cards sit in the deck is not revealed; read it from the game's cards endpoint.",
+		Tags:          []string{"game"},
+		DefaultStatus: http.StatusOK,
+	}, h.ListCardSuits)
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "shuffle-game-cards",
@@ -233,6 +262,28 @@ func (h *GameHandler) ListCards(ctx context.Context, in *ListGameCardsInput) (*L
 		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
 	}
 	return &ListGameCardsOutput{Body: body}, nil
+}
+
+// ListCardSuits handles GET /api/v1/games/{gameId}/cards/suits.
+func (h *GameHandler) ListCardSuits(ctx context.Context, in *ListGameCardSuitsInput) (*ListGameCardSuitsOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+
+	counts, err := h.svc.SuitCounts(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("game not found")
+		}
+		return nil, huma.Error500InternalServerError("failed to count cards by suit", err)
+	}
+
+	body := make([]SuitCount, 0, len(counts))
+	for _, c := range counts {
+		body = append(body, SuitCount{Suit: string(c.Suit), Remaining: c.Remaining})
+	}
+	return &ListGameCardSuitsOutput{Body: body}, nil
 }
 
 // Shuffle handles POST /api/v1/games/{gameId}/cards/shuffle.
