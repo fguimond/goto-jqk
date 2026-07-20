@@ -109,6 +109,72 @@ func TestGameStore_Shuffle(t *testing.T) {
 	}
 }
 
+func TestGameStore_DealCards(t *testing.T) {
+	s := NewGameStore()
+	p := &model.Player{ID: uuid.New(), Name: "Alice"}
+	g := &model.Game{
+		ID:       uuid.New(),
+		Name:     "Poker",
+		GameDeck: model.NewCards(),
+		Players:  []*model.Player{p},
+	}
+	g.Players[0].GameID = g.ID
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	want := model.NewCards()
+	dealt, err := s.DealCards(g.ID, p.ID, 5)
+	if err != nil {
+		t.Fatalf("DealCards returned error: %v", err)
+	}
+	if !slices.Equal(dealt, want[:5]) {
+		t.Errorf("expected the first 5 cards of the game deck, got a different set")
+	}
+
+	// Both sides of the move must agree: the deck gave up exactly what the hand
+	// received.
+	stored := s.games[g.ID]
+	if len(stored.GameDeck) != 47 {
+		t.Errorf("expected 47 cards left in the game deck, got %d", len(stored.GameDeck))
+	}
+	if !slices.Equal(stored.GameDeck, want[5:]) {
+		t.Errorf("expected the game deck to resume at the 6th card")
+	}
+	if !slices.Equal(stored.Players[0].Cards, want[:5]) {
+		t.Errorf("expected the player to hold the 5 dealt cards")
+	}
+
+	// Mutating the returned cards must leave the store untouched. This holds
+	// today even without the clone in DealCards, because reslicing forward
+	// abandons the head of the array rather than writing over it — so this is a
+	// regression guard on the invariant, not a check that the clone is present.
+	for i := range dealt {
+		dealt[i] = model.Card{}
+	}
+	if !slices.Equal(s.games[g.ID].Players[0].Cards, want[:5]) {
+		t.Errorf("expected the stored hand to survive mutation of the returned cards")
+	}
+	if !slices.Equal(s.games[g.ID].GameDeck, want[5:]) {
+		t.Errorf("expected the stored game deck to survive mutation of the returned cards")
+	}
+
+	// Dealing more than the deck holds deals nothing at all.
+	if _, err := s.DealCards(g.ID, p.ID, 48); err != store.ErrConflict {
+		t.Errorf("expected ErrConflict when the deck is too short, got %v", err)
+	}
+	if len(s.games[g.ID].GameDeck) != 47 {
+		t.Errorf("expected the rejected deal to leave 47 cards, got %d", len(s.games[g.ID].GameDeck))
+	}
+
+	if _, err := s.DealCards(uuid.New(), p.ID, 1); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+	if _, err := s.DealCards(g.ID, uuid.New(), 1); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown player, got %v", err)
+	}
+}
+
 func TestGameStore_List(t *testing.T) {
 	s := NewGameStore()
 	g := &model.Game{ID: uuid.New(), Name: "Poker", Decks: []*model.Deck{{ID: uuid.New()}}}

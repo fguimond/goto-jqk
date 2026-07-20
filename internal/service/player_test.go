@@ -2,13 +2,94 @@ package service
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/fguimond/goto-jqk/internal/model"
 	"github.com/fguimond/goto-jqk/internal/store"
 	"github.com/fguimond/goto-jqk/internal/store/memory"
 )
+
+func TestPlayerService_Deal(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	games := NewGameService(gameStore)
+	svc := NewPlayerService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	ctx := context.Background()
+
+	g, err := games.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create game returned error: %v", err)
+	}
+	p, err := svc.Create(ctx, g.ID, "Alice")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+	d, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{d.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	// The deal comes off the top of the game deck, in order.
+	want := model.NewCards()
+	dealt, err := svc.Deal(ctx, g.ID, p.ID, 5)
+	if err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+	if !slices.Equal(dealt, want[:5]) {
+		t.Errorf("expected the first 5 cards of the game deck, got a different set")
+	}
+
+	cards, err := games.Cards(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if len(cards) != 47 {
+		t.Errorf("expected 47 cards left in the game deck, got %d", len(cards))
+	}
+
+	// A second deal continues down the deck rather than repeating cards.
+	dealt, err = svc.Deal(ctx, g.ID, p.ID, 3)
+	if err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+	if !slices.Equal(dealt, want[5:8]) {
+		t.Errorf("expected the next 3 cards of the game deck, got a different set")
+	}
+
+	// Both deals landed in the player's hand.
+	listed, err := games.List(ctx)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(listed[0].Players[0].Cards) != 8 {
+		t.Errorf("expected the player to hold 8 cards, got %d", len(listed[0].Players[0].Cards))
+	}
+
+	// Dealing more than the deck holds deals nothing at all.
+	if _, err := svc.Deal(ctx, g.ID, p.ID, 99); err != store.ErrConflict {
+		t.Errorf("expected ErrConflict when the deck is too short, got %v", err)
+	}
+	cards, err = games.Cards(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Cards returned error: %v", err)
+	}
+	if len(cards) != 44 {
+		t.Errorf("expected the rejected deal to leave 44 cards, got %d", len(cards))
+	}
+
+	if _, err := svc.Deal(ctx, uuid.New(), p.ID, 1); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+	if _, err := svc.Deal(ctx, g.ID, uuid.New(), 1); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown player, got %v", err)
+	}
+}
 
 func TestPlayerService_CreateAndDelete(t *testing.T) {
 	gameStore := memory.NewGameStore()
