@@ -224,6 +224,64 @@ func TestGameStore_PlayerCards(t *testing.T) {
 	}
 }
 
+func TestGameStore_Players(t *testing.T) {
+	s := NewGameStore()
+	cards := model.NewCards()
+	first := &model.Player{ID: uuid.New(), Name: "Alice", Cards: slices.Clone(cards[:5])}
+	second := &model.Player{ID: uuid.New(), Name: "Bob"}
+	g := &model.Game{
+		ID:      uuid.New(),
+		Name:    "Poker",
+		Players: []*model.Player{first, second},
+	}
+	if err := s.Create(g); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	got, err := s.Players(g.ID)
+	if err != nil {
+		t.Fatalf("Players returned error: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != first.ID || got[1].ID != second.ID {
+		t.Fatalf("expected both players in join order")
+	}
+	if !slices.Equal(got[0].Cards, cards[:5]) {
+		t.Errorf("expected the player's 5 cards, got a different set")
+	}
+	if len(got[1].Cards) != 0 {
+		t.Errorf("expected a player dealt nothing to hold no cards, got %d", len(got[1].Cards))
+	}
+
+	// The players must be copies, hands included: mutating one leaves the store
+	// untouched. snapshotGame would fail this, which is why Players does not use it.
+	got[0].Name = "Mallory"
+	got[0].Cards = append(got[0].Cards, model.Card{Suit: model.Hearts, Value: model.Ace})
+	stored := s.games[g.ID].Players[0]
+	if stored.Name != "Alice" {
+		t.Errorf("expected the stored player to still be named Alice, got %q", stored.Name)
+	}
+	if len(stored.Cards) != 5 {
+		t.Errorf("expected the stored hand to still hold 5 cards, got %d", len(stored.Cards))
+	}
+
+	// A game with no players is an empty list, not an error.
+	bare := &model.Game{ID: uuid.New(), Name: "Chess"}
+	if err := s.Create(bare); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	players, err := s.Players(bare.ID)
+	if err != nil {
+		t.Fatalf("Players returned error for a game with no players: %v", err)
+	}
+	if len(players) != 0 {
+		t.Errorf("expected no players, got %d", len(players))
+	}
+
+	if _, err := s.Players(uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}
+
 func TestGameStore_List(t *testing.T) {
 	s := NewGameStore()
 	g := &model.Game{ID: uuid.New(), Name: "Poker", Decks: []*model.Deck{{ID: uuid.New()}}}

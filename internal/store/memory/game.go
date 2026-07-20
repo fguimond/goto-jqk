@@ -191,6 +191,31 @@ func (s *GameStore) PlayerCards(gameID, playerID uuid.UUID) ([]model.Card, error
 	return slices.Clone(g.Players[i].Cards), nil
 }
 
+// Players returns the players in the game with the given ID, in the order they
+// joined, or ErrNotFound if the game is absent. A game with no players is an
+// empty list, not an error.
+//
+// Each player is copied, hand included, rather than handed back as the stored
+// pointer: DealCards appends to a hand under the lock, so sharing the players
+// would let a caller observe a hand mid-deal. snapshotGame cannot serve this
+// read for the same reason PlayerCards does not use it — it clones Players as a
+// slice of pointers, and so shares the players themselves.
+func (s *GameStore) Players(gameID uuid.UUID) ([]*model.Player, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	players := make([]*model.Player, 0, len(g.Players))
+	for _, p := range g.Players {
+		clone := *p
+		clone.Cards = slices.Clone(p.Cards)
+		players = append(players, &clone)
+	}
+	return players, nil
+}
+
 // snapshotGame copies a stored game and its slices, so callers never hold the
 // stored game or the backing arrays the store keeps appending to. Callers must
 // hold the lock.

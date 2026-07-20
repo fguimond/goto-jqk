@@ -39,8 +39,23 @@ var AllSuits = []Suit{Hearts, Spades, Clubs, Diamonds}
 // AllValues lists every value, in deck order.
 var AllValues = []Value{Ace, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King}
 
+// valuePoints scores every value at face value: the ace is 1, the numeric cards
+// score their number, and the court cards run on from the ten.
+var valuePoints = map[Value]int{
+	Ace: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7,
+	Eight: 8, Nine: 9, Ten: 10, Jack: 11, Queen: 12, King: 13,
+}
+
 // Card is a single playing card.
 type Card struct {
 	Suit  Suit
 	Value Value
+}
+
+// Points is the card's face value as a number. Suit does not enter into it, so
+// the four aces are worth the same. A card whose value is not one of the
+// thirteen scores 0, which only a hand-built Card can be: NewCards only ever
+// produces values from AllValues.
+func (c Card) Points() int {
+	return valuePoints[c.Value]
 }

@@ -155,6 +155,141 @@ func TestPlayerService_Cards(t *testing.T) {
 	}
 }
 
+func TestPlayerService_Leaders(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	games := NewGameService(gameStore)
+	svc := NewPlayerService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	ctx := context.Background()
+
+	g, err := games.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create game returned error: %v", err)
+	}
+
+	// A game with no players ranks empty, which is not an error.
+	leaders, err := svc.Leaders(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Leaders returned error: %v", err)
+	}
+	if len(leaders) != 0 {
+		t.Errorf("expected no leaders in a game with no players, got %d", len(leaders))
+	}
+
+	alice, err := svc.Create(ctx, g.ID, "Alice")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+	bob, err := svc.Create(ctx, g.ID, "Bob")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+	carol, err := svc.Create(ctx, g.ID, "Carol")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+
+	d, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{d.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	// The deck is unshuffled and suit-major, so the deals come off the top in
+	// value order: Alice takes the ace, 2 and 3 of hearts, Bob the 4 through 8.
+	if _, err := svc.Deal(ctx, g.ID, alice.ID, 3); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+	if _, err := svc.Deal(ctx, g.ID, bob.ID, 5); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+
+	leaders, err = svc.Leaders(ctx, g.ID)
+	if err != nil {
+		t.Fatalf("Leaders returned error: %v", err)
+	}
+
+	// Bob leads on 4+5+6+7+8, Alice follows on 1+2+3, and Carol, dealt nothing,
+	// is ranked last rather than left out.
+	want := []Leader{
+		{Player: bob, Total: 30},
+		{Player: alice, Total: 6},
+		{Player: carol, Total: 0},
+	}
+	if len(leaders) != len(want) {
+		t.Fatalf("expected %d leaders, got %d", len(want), len(leaders))
+	}
+	for i, w := range want {
+		if leaders[i].Player.ID != w.Player.ID {
+			t.Errorf("expected %s in position %d, got %s", w.Player.Name, i, leaders[i].Player.Name)
+		}
+		if leaders[i].Total != w.Total {
+			t.Errorf("expected %s to total %d, got %d", w.Player.Name, w.Total, leaders[i].Total)
+		}
+	}
+
+	if _, err := svc.Leaders(ctx, uuid.New()); err != store.ErrNotFound {
+		t.Errorf("expected ErrNotFound for an unknown game, got %v", err)
+	}
+}
+
+// Players on equal totals keep the order they joined the game in, so successive
+// calls rank a settled game the same way.
+func TestPlayerService_LeadersTiesHoldJoinOrder(t *testing.T) {
+	gameStore := memory.NewGameStore()
+	games := NewGameService(gameStore)
+	svc := NewPlayerService(gameStore)
+	decks := NewDeckService(memory.NewDeckStore(), gameStore)
+	ctx := context.Background()
+
+	g, err := games.Create(ctx, "Poker")
+	if err != nil {
+		t.Fatalf("Create game returned error: %v", err)
+	}
+	first, err := svc.Create(ctx, g.ID, "Alice")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+	second, err := svc.Create(ctx, g.ID, "Bob")
+	if err != nil {
+		t.Fatalf("Create player returned error: %v", err)
+	}
+
+	d, err := decks.Create(ctx, nil)
+	if err != nil {
+		t.Fatalf("Create deck returned error: %v", err)
+	}
+	if _, err := decks.AddDecks(ctx, g.ID, []uuid.UUID{d.ID}); err != nil {
+		t.Fatalf("AddDecks returned error: %v", err)
+	}
+
+	// Alice takes the ace and 2 of hearts, Bob the 3: both total 3.
+	if _, err := svc.Deal(ctx, g.ID, first.ID, 2); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+	if _, err := svc.Deal(ctx, g.ID, second.ID, 1); err != nil {
+		t.Fatalf("Deal returned error: %v", err)
+	}
+
+	for range 3 {
+		leaders, err := svc.Leaders(ctx, g.ID)
+		if err != nil {
+			t.Fatalf("Leaders returned error: %v", err)
+		}
+		if len(leaders) != 2 {
+			t.Fatalf("expected 2 leaders, got %d", len(leaders))
+		}
+		if leaders[0].Total != 3 || leaders[1].Total != 3 {
+			t.Fatalf("expected both players to total 3, got %d and %d", leaders[0].Total, leaders[1].Total)
+		}
+		if leaders[0].Player.ID != first.ID || leaders[1].Player.ID != second.ID {
+			t.Errorf("expected tied players in join order, got %s then %s", leaders[0].Player.Name, leaders[1].Player.Name)
+		}
+	}
+}
+
 func TestPlayerService_CreateAndDelete(t *testing.T) {
 	gameStore := memory.NewGameStore()
 	games := NewGameService(gameStore)
