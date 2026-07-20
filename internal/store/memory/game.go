@@ -129,6 +129,44 @@ func (s *GameStore) RemovePlayer(gameID, playerID uuid.UUID) error {
 	return nil
 }
 
+// DealCards moves count cards off the top of the game deck into the hand of the
+// player with the given ID, returning the cards dealt. ErrNotFound is returned
+// if either the game or the player is absent, and ErrConflict if the game deck
+// holds fewer than count cards, in which case nothing is dealt.
+//
+// The lookup, the check and the transfer happen under a single lock, so both
+// sides of the move are consistent and callers never mutate a stored game
+// outside the store's synchronization.
+//
+// The dealt cards are cloned rather than handed out as a window onto the game
+// deck's backing array. Reslicing forward as this does abandons the head, which
+// nothing then writes to, so the clone is not strictly required today — it holds
+// the invariant unconditionally instead of resting on that argument, which a
+// switch to a compacting delete would quietly invalidate.
+func (s *GameStore) DealCards(gameID, playerID uuid.UUID, count int) ([]model.Card, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	g, ok := s.games[gameID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	i := slices.IndexFunc(g.Players, func(p *model.Player) bool {
+		return p.ID == playerID
+	})
+	if i < 0 {
+		return nil, store.ErrNotFound
+	}
+	if count > len(g.GameDeck) {
+		return nil, store.ErrConflict
+	}
+
+	dealt := slices.Clone(g.GameDeck[:count])
+	g.GameDeck = g.GameDeck[count:]
+	g.Players[i].Cards = append(g.Players[i].Cards, dealt...)
+
+	return dealt, nil
+}
+
 // snapshotGame copies a stored game and its slices, so callers never hold the
 // stored game or the backing arrays the store keeps appending to. Callers must
 // hold the lock.

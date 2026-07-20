@@ -15,6 +15,7 @@ import (
 type PlayerStore interface {
 	AddPlayer(gameID uuid.UUID, p *model.Player) (*model.Game, error)
 	RemovePlayer(gameID, playerID uuid.UUID) error
+	DealCards(gameID, playerID uuid.UUID, count int) ([]model.Card, error)
 }
 
 // PlayerService implements player-related business logic.
@@ -41,6 +42,17 @@ func (s *PlayerService) Create(_ context.Context, gameID uuid.UUID, name string)
 		return nil, err
 	}
 	return p, nil
+}
+
+// Deal moves count cards off the top of the game's deck into the player's hand
+// and returns the cards dealt. It is all-or-nothing: store.ErrConflict is
+// returned if the game deck holds fewer than count cards, and nothing is dealt.
+// store.ErrNotFound is returned if either the game or the player is unknown.
+//
+// The move happens entirely inside the store, which holds both the game deck
+// and the player's hand, so the two sides never disagree.
+func (s *PlayerService) Deal(_ context.Context, gameID, playerID uuid.UUID, count int) ([]model.Card, error) {
+	return s.games.DealCards(gameID, playerID, count)
 }
 
 // Delete removes a player from a game, returning store.ErrNotFound if either

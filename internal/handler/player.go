@@ -76,6 +76,23 @@ type DeletePlayerInput struct {
 // DeletePlayerOutput carries no body; it results in a 204 response.
 type DeletePlayerOutput struct{}
 
+// DealCardsInput is the path and request body for dealing cards to a player.
+type DealCardsInput struct {
+	GameID   string `path:"gameId" format:"uuid" doc:"Unique identifier of the game"`
+	PlayerID string `path:"playerId" format:"uuid" doc:"Unique identifier of the player"`
+	Body     struct {
+		// No default: huma marks a non-pointer field required regardless, so a
+		// documented default would advertise behavior the API does not honor.
+		Count int `json:"count" minimum:"1" doc:"Number of cards to deal" example:"2"`
+	}
+}
+
+// DealCardsOutput is the response carrying the cards dealt by this call, rather
+// than the player's whole hand: those are the cards the operation produced.
+type DealCardsOutput struct {
+	Body []Card
+}
+
 // Register attaches the player operations to the API.
 func (h *PlayerHandler) Register(api huma.API) {
 	huma.Register(api, huma.Operation{
@@ -96,6 +113,16 @@ func (h *PlayerHandler) Register(api huma.API) {
 		Tags:          []string{"player"},
 		DefaultStatus: http.StatusNoContent,
 	}, h.Delete)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "deal-cards",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/games/{gameId}/players/{playerId}/cards",
+		Summary:       "Deal cards to a player",
+		Description:   "Deals cards off the top of the game deck into the player's hand and returns the cards dealt. The deal is all-or-nothing: if the game deck holds fewer cards than requested, none are dealt. Successive deals continue down the deck rather than repeating cards.",
+		Tags:          []string{"player"},
+		DefaultStatus: http.StatusCreated,
+	}, h.Deal)
 }
 
 // Create handles POST /api/v1/games/{gameId}/players.
@@ -114,6 +141,36 @@ func (h *PlayerHandler) Create(ctx context.Context, in *CreatePlayerInput) (*Cre
 	}
 
 	return &CreatePlayerOutput{Body: newPlayer(p)}, nil
+}
+
+// Deal handles POST /api/v1/games/{gameId}/players/{playerId}/cards.
+func (h *PlayerHandler) Deal(ctx context.Context, in *DealCardsInput) (*DealCardsOutput, error) {
+	gameID, err := uuid.Parse(in.GameID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid game id", err)
+	}
+	playerID, err := uuid.Parse(in.PlayerID)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid player id", err)
+	}
+
+	dealt, err := h.svc.Deal(ctx, gameID, playerID, in.Body.Count)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			return nil, huma.Error404NotFound("game or player not found")
+		case errors.Is(err, store.ErrConflict):
+			return nil, huma.Error409Conflict("not enough cards in the game deck")
+		}
+		return nil, huma.Error500InternalServerError("failed to deal cards", err)
+	}
+
+	// Built empty rather than nil so a deal of no cards serializes as [], not null.
+	body := make([]Card, 0, len(dealt))
+	for _, c := range dealt {
+		body = append(body, Card{Suit: string(c.Suit), Value: string(c.Value)})
+	}
+	return &DealCardsOutput{Body: body}, nil
 }
 
 // Delete handles DELETE /api/v1/games/{gameId}/players/{playerId}.
